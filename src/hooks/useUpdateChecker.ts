@@ -124,13 +124,9 @@ export function useUpdateChecker(): UpdateContextValue {
     await checkForUpdatesBrowser();
   }, [isNativeUpdater, checkForUpdatesBrowser]);
 
-  // Browser mode: periodic check (non-Electron or as fallback)
-  useEffect(() => {
-    if (isNativeUpdater) return; // native updater handles its own initial check
-    checkForUpdatesBrowser();
-    const id = setInterval(checkForUpdatesBrowser, CHECK_INTERVAL);
-    return () => clearInterval(id);
-  }, [isNativeUpdater, checkForUpdatesBrowser]);
+  // Auto-check disabled: update checks are manual-only (via Settings).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  void CHECK_INTERVAL;
 
   const dismissUpdate = useCallback(() => {
     setShowDialog(false);
