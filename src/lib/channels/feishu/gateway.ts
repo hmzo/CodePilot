@@ -145,6 +145,18 @@ export class FeishuGateway {
       loggerLevel: lark.LoggerLevel.warn,
     });
 
+    // Disable proxy on the SDK's shared axios instance.
+    // VPN tools (Clash, V2Ray, etc.) set https_proxy=http://127.0.0.1:PORT, causing axios to
+    // tunnel Feishu HTTPS API calls through an HTTP proxy that can't handle TLS correctly,
+    // resulting in "plain HTTP request sent to HTTPS port" (400) from Feishu's servers.
+    // lark.Client and lark.WSClient share the same internal axios instance — patching it once
+    // covers all SDK HTTP requests (token refresh, message send, WS endpoint lookup, etc.).
+    const sharedHttp = (this.wsClient as unknown as Record<string, unknown>).httpInstance as
+      { defaults?: Record<string, unknown> } | undefined;
+    if (sharedHttp?.defaults) {
+      sharedHttp.defaults['proxy'] = false;
+    }
+
     // Monkey-patch handleEventData to support card action events (type: "card").
     // The SDK's WSClient only handles type="event" by default; card action
     // callbacks arrive as type="card" and would be silently dropped.
