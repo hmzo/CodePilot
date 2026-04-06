@@ -1,3 +1,37 @@
+## CodePilot v0.48.0
+
+> 修复使用 VPN/代理工具时飞书桥接无法连接的问题，关闭自动更新检查。
+
+### 修复问题
+
+- 修复使用 V2Ray、Clash 等代理工具时飞书桥接始终报"app not online"无法连接的问题：代理工具设置的系统环境变量导致飞书 SDK 的 HTTPS 请求通过代理发送时 TLS 握手失败，现在飞书相关请求会自动绕过系统代理直连
+
+### 优化改进
+
+- 关闭启动时和定时自动检查更新，避免每次打开应用时访问外部接口；手动检查更新仍可在设置中触发
+
+## 下载地址
+
+### macOS
+- [Apple Silicon (M1/M2/M3/M4)](https://github.com/hmzo/CodePilot/releases/download/v0.48.0/CodePilot-0.48.0-arm64.dmg)
+- [Intel](https://github.com/hmzo/CodePilot/releases/download/v0.48.0/CodePilot-0.48.0-x64.dmg)
+
+### Windows
+- [Windows 安装包](https://github.com/hmzo/CodePilot/releases/download/v0.48.0/CodePilot.Setup.0.48.0.exe)
+
+## 安装说明
+
+**macOS**: 下载 DMG → 拖入 Applications → 首次启动如遇安全提示，在系统设置 > 隐私与安全中点击"仍要打开"
+**Windows**: 下载 exe 安装包 → 双击安装
+
+## 系统要求
+
+- macOS 12.0+ / Windows 10+ / Linux (glibc 2.31+)
+- 需要配置 API 服务商（Anthropic / OpenRouter 等）
+- 推荐安装 Claude Code CLI 以获得完整功能
+
+---
+
 ## CodePilot v0.47.0
 
 > 服务商系统全面治理，新增连接测试和匿名错误上报，品牌重定位为多模型 AI Agent 桌面客户端。
