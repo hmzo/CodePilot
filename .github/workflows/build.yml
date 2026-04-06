@@ -115,7 +115,7 @@ jobs:
 
   build-macos:
     needs: [lint-test, smoke-test]
-    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'macos' }}
+    if: ${{ inputs.platform == 'macos' }}
     runs-on: macos-latest
     env:
       HAS_CERT: ${{ secrets.MAC_CERT_P12_BASE64 != '' && 'true' || 'false' }}
@@ -204,7 +204,7 @@ jobs:
 
   build-linux-x64:
     needs: [lint-test, smoke-test]
-    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux' }}
+    if: ${{ inputs.platform == 'linux' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -287,7 +287,7 @@ jobs:
 
   build-linux-arm64:
     needs: [lint-test, smoke-test]
-    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux' }}
+    if: ${{ inputs.platform == 'linux' }}
     # Use a native arm64 runner — avoids fragile cross-compilation toolchain
     # setup that breaks across Ubuntu versions (sources.list vs deb822).
     # Falls back gracefully: if the runner label isn't available, the job
