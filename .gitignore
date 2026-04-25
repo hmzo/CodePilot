@@ -64,3 +64,6 @@ apps/site/node_modules/
 
 # claude code session data
 .claude/
+
+# bundled Claude Code native binary (downloaded by scripts/fetch-claude-binary.js)
+/vendor/

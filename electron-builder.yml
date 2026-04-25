@@ -42,6 +42,13 @@ extraResources:
   - from: build/
     to: .
     filter: ["icon.*"]
+  # Bundled Claude Code native binary (~210 MB per arch).
+  # scripts/before-pack.js fetches the right tarball for the target platform/arch
+  # before this copy runs.
+  - from: vendor/claude-code/
+    to: claude/
+    filter: ["claude", "claude.exe"]
+beforePack: scripts/before-pack.js
 afterPack: scripts/after-pack.js
 afterSign: scripts/after-sign.js
 asarUnpack:

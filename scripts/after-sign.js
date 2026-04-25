@@ -11,10 +11,15 @@
  * code signature.
  *
  * Ad-hoc signing order (inside-out):
+ *   0. Bundled Claude Code binary (Resources/claude/claude)
  *   1. All native binaries (.node, .dylib, .so)
  *   2. All Frameworks (*.framework)
  *   3. All Helper apps (*.app inside Frameworks/)
  *   4. The main .app bundle
+ *
+ * In Developer ID mode, we also re-sign Resources/claude/claude with our
+ * identity so its outer signature matches the .app bundle (Anthropic ships
+ * the binary pre-signed with their own Developer ID).
  */
 const fs = require('fs');
 const path = require('path');
@@ -90,6 +95,9 @@ module.exports = async function afterSign(context) {
     return;
   }
 
+  const contentsPath = path.join(appPath, 'Contents');
+  const frameworksPath = path.join(contentsPath, 'Frameworks');
+
   // ── Detect real (non-ad-hoc) code signature ───────────────────────────
   // Check env vars first (CI path), then probe the actual signature on the
   // .app bundle (covers the case where electron-builder auto-discovered a
@@ -111,9 +119,34 @@ module.exports = async function afterSign(context) {
     }
   }
 
+  // The bundled Claude Code binary lives at Contents/Resources/claude/claude
+  // and ships pre-signed by Anthropic with their Developer ID. We always need
+  // to re-sign it with whatever identity is signing the rest of the bundle so
+  // that `codesign --verify --deep --strict` doesn't trip on the mismatched
+  // outer/inner signing identity.
+  const bundledClaudePath = path.join(contentsPath, 'Resources', 'claude', 'claude');
+
   if (hasRealSignature) {
     console.log('[afterSign] Real code signing certificate detected (CSC_LINK/CSC_NAME set or Developer ID signature found).');
-    console.log('[afterSign] Skipping ad-hoc signing to preserve Developer ID signature.');
+
+    if (fs.existsSync(bundledClaudePath)) {
+      const identity = process.env.CSC_NAME || 'Developer ID Application';
+      const entitlementsPath = path.join(__dirname, '..', 'build', 'entitlements.mac.plist');
+      try {
+        execSync(
+          `codesign --force --options runtime --timestamp ` +
+            `--entitlements "${entitlementsPath}" ` +
+            `--sign "${identity}" "${bundledClaudePath}"`,
+          { stdio: 'pipe', timeout: 60000 }
+        );
+        console.log('[afterSign] Re-signed bundled Claude Code binary with Developer ID.');
+      } catch (err) {
+        console.error(
+          '[afterSign] WARNING: Failed to re-sign bundled Claude Code binary:',
+          err.stderr?.toString() || err.message
+        );
+      }
+    }
 
     try {
       execSync(`codesign --verify --deep --strict --verbose=4 "${appPath}"`, {
@@ -130,9 +163,15 @@ module.exports = async function afterSign(context) {
   // ── No certificate — ad-hoc signing fallback ─────────────────────────
   console.log(`[afterSign] Ad-hoc signing ${appPath} (individual component signing)...`);
 
-  const contentsPath = path.join(appPath, 'Contents');
-  const frameworksPath = path.join(contentsPath, 'Frameworks');
   let signed = 0;
+
+  // Step 0: Sign the bundled Claude Code binary (~210 MB, pre-signed by
+  // Anthropic). Has to come first so the outer .app signature stays consistent.
+  if (fs.existsSync(bundledClaudePath)) {
+    codesign(bundledClaudePath);
+    signed++;
+    console.log('[afterSign]   Signed bundled Claude Code binary');
+  }
 
   // Step 1: Sign all native binaries (.node, .dylib, .so)
   const nativeBinaries = collectFiles(contentsPath, ['.node', '.dylib', '.so']);
