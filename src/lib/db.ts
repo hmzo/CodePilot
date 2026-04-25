@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
-import type { ChatSession, Message, SettingsMap, TaskItem, TaskStatus, ApiProvider, CreateProviderRequest, UpdateProviderRequest, MediaJob, MediaJobStatus, MediaJobItem, MediaJobItemStatus, MediaContextEvent, BatchConfig, CustomCliTool, ScheduledTask } from '@/types';
+import type { ChatSession, Message, SettingsMap, MediaJob, MediaJobStatus, MediaJobItem, MediaJobItemStatus, MediaContextEvent, BatchConfig, CustomCliTool } from '@/types';
 import type { ChannelType, ChannelBinding } from './bridge/types';
 import { getLocalDateString, localDayStartAsUTC } from './utils';
 
@@ -123,31 +123,6 @@ function initDb(db: Database.Database): void {
       value TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS tasks (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'failed')),
-      description TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS api_providers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      provider_type TEXT NOT NULL DEFAULT 'anthropic',
-      base_url TEXT NOT NULL DEFAULT '',
-      api_key TEXT NOT NULL DEFAULT '',
-      is_active INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      extra_env TEXT NOT NULL DEFAULT '{}',
-      notes TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
     CREATE TABLE IF NOT EXISTS media_generations (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL DEFAULT 'image',
@@ -230,7 +205,6 @@ function initDb(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON chat_sessions(updated_at);
-    CREATE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id);
     CREATE INDEX IF NOT EXISTS idx_media_created_at ON media_generations(created_at);
     CREATE INDEX IF NOT EXISTS idx_media_session_id ON media_generations(session_id);
     CREATE INDEX IF NOT EXISTS idx_media_status ON media_generations(status);
@@ -390,17 +364,6 @@ function migrateDb(db: Database.Database): void {
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_runtime_status ON chat_sessions(runtime_status)");
 
-  // Migrate is_active provider to default_provider_id setting
-  const defaultProviderSetting = db.prepare("SELECT value FROM settings WHERE key = 'default_provider_id'").get() as { value: string } | undefined;
-  if (!defaultProviderSetting) {
-    const activeProvider = db.prepare('SELECT id FROM api_providers WHERE is_active = 1 LIMIT 1').get() as { id: string } | undefined;
-    if (activeProvider) {
-      db.prepare(
-        "INSERT INTO settings (key, value) VALUES ('default_provider_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-      ).run(activeProvider.id);
-    }
-  }
-
   const msgColumns = db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
   const msgColNames = msgColumns.map(c => c.name);
 
@@ -412,87 +375,29 @@ function migrateDb(db: Database.Database): void {
     safeAddColumn(db, "ALTER TABLE messages ADD COLUMN is_heartbeat_ack INTEGER NOT NULL DEFAULT 0");
   }
 
-  // Ensure tasks table exists for databases created before this migration
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'failed')),
-      description TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id);
-  `);
-
-  // Add source column to tasks table (user vs sdk)
-  const taskColumns = db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[];
-  const taskColNames = taskColumns.map(c => c.name);
-  if (!taskColNames.includes('source')) {
-    safeAddColumn(db, "ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'user'");
-  }
-  if (!taskColNames.includes('sort_order')) {
-    safeAddColumn(db, "ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0");
-  }
-
-  // Ensure api_providers table exists for databases created before this migration
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS api_providers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      provider_type TEXT NOT NULL DEFAULT 'anthropic',
-      base_url TEXT NOT NULL DEFAULT '',
-      api_key TEXT NOT NULL DEFAULT '',
-      is_active INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      extra_env TEXT NOT NULL DEFAULT '{}',
-      notes TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-
-  // Add new provider fields (protocol, headers, env_overrides, role_models)
+  // Provider system + auxiliary AI scheduler removed: drop legacy tables and
+  // obsolete settings keys. Old chat_sessions.provider_id / provider_name
+  // columns are intentionally kept as dead columns to avoid SQLite
+  // ALTER TABLE complications.
+  db.exec(`DROP TABLE IF EXISTS provider_models`);
+  db.exec(`DROP TABLE IF EXISTS api_providers`);
+  db.exec(`DROP TABLE IF EXISTS task_run_logs`);
+  db.exec(`DROP TABLE IF EXISTS scheduled_tasks`);
+  db.exec(`DROP TABLE IF EXISTS tasks`);
   {
-    const providerCols = db.prepare("PRAGMA table_info(api_providers)").all() as { name: string }[];
-    const provColNames = providerCols.map(c => c.name);
-    if (!provColNames.includes('protocol')) {
-      safeAddColumn(db, "ALTER TABLE api_providers ADD COLUMN protocol TEXT NOT NULL DEFAULT ''");
-    }
-    if (!provColNames.includes('headers_json')) {
-      safeAddColumn(db, "ALTER TABLE api_providers ADD COLUMN headers_json TEXT NOT NULL DEFAULT '{}'");
-    }
-    if (!provColNames.includes('env_overrides_json')) {
-      safeAddColumn(db, "ALTER TABLE api_providers ADD COLUMN env_overrides_json TEXT NOT NULL DEFAULT ''");
-    }
-    if (!provColNames.includes('role_models_json')) {
-      safeAddColumn(db, "ALTER TABLE api_providers ADD COLUMN role_models_json TEXT NOT NULL DEFAULT '{}'");
-    }
-    if (!provColNames.includes('options_json')) {
-      safeAddColumn(db, "ALTER TABLE api_providers ADD COLUMN options_json TEXT NOT NULL DEFAULT '{}'");
+    const obsoleteSettingsKeys = [
+      'default_provider_id',
+      'global_default_model',
+      'global_default_model_provider',
+      'anthropic_auth_token',
+      'anthropic_base_url',
+      'bridge_default_provider_id',
+    ];
+    const stmt = db.prepare('DELETE FROM settings WHERE key = ?');
+    for (const key of obsoleteSettingsKeys) {
+      stmt.run(key);
     }
   }
-
-  // Create provider_models table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS provider_models (
-      id TEXT PRIMARY KEY,
-      provider_id TEXT NOT NULL,
-      model_id TEXT NOT NULL,
-      upstream_model_id TEXT NOT NULL DEFAULT '',
-      display_name TEXT NOT NULL DEFAULT '',
-      capabilities_json TEXT NOT NULL DEFAULT '{}',
-      variants_json TEXT NOT NULL DEFAULT '{}',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (provider_id) REFERENCES api_providers(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_provider_models_provider_id ON provider_models(provider_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_models_provider_model ON provider_models(provider_id, model_id);
-  `);
 
   // Ensure media_generations table exists for databases created before this migration
   db.exec(`
@@ -658,20 +563,6 @@ function migrateDb(db: Database.Database): void {
         message = 'Process restarted'
     WHERE status = 'pending'
   `);
-
-  // Migrate existing settings to a default provider if api_providers is empty
-  const providerCount = db.prepare('SELECT COUNT(*) as count FROM api_providers').get() as { count: number };
-  if (providerCount.count === 0) {
-    const tokenRow = db.prepare("SELECT value FROM settings WHERE key = 'anthropic_auth_token'").get() as { value: string } | undefined;
-    const baseUrlRow = db.prepare("SELECT value FROM settings WHERE key = 'anthropic_base_url'").get() as { value: string } | undefined;
-    if (tokenRow || baseUrlRow) {
-      const id = crypto.randomBytes(16).toString('hex');
-      const now = new Date().toISOString().replace('T', ' ').split('.')[0];
-      db.prepare(
-        'INSERT INTO api_providers (id, name, provider_type, base_url, api_key, is_active, sort_order, extra_env, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-      ).run(id, 'Default', 'anthropic', baseUrlRow?.value || '', tokenRow?.value || '', 1, 0, '{}', 'Migrated from settings', now, now);
-    }
-  }
 
   // Ensure bridge tables exist for databases created before bridge feature
   db.exec(`
@@ -842,80 +733,10 @@ function migrateDb(db: Database.Database): void {
     }
   }
 
-  // Migration: remove explicitly openai-compatible providers (SDK does not support them)
-  // and backfill empty protocol for legacy custom providers using URL-based inference.
-  try {
-    const providerCols = db.prepare("PRAGMA table_info(api_providers)").all() as { name: string }[];
-    if (providerCols.some(c => c.name === 'protocol')) {
-      db.exec("DELETE FROM api_providers WHERE protocol = 'openai-compatible'");
-
-      // Backfill empty protocol for legacy custom providers — infer from base_url.
-      // These are valid Anthropic-compatible providers (GLM, Kimi, MiniMax, etc.)
-      // that were created before the protocol column existed.
-      const legacyCustom = db.prepare(
-        "SELECT id, base_url FROM api_providers WHERE provider_type = 'custom' AND (protocol = '' OR protocol IS NULL)"
-      ).all() as { id: string; base_url: string }[];
-      if (legacyCustom.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require to avoid circular import at module load
-        const { inferProtocolFromLegacy } = require('./provider-catalog');
-        const updateStmt = db.prepare("UPDATE api_providers SET protocol = ? WHERE id = ?");
-        for (const row of legacyCustom) {
-          const protocol = inferProtocolFromLegacy('custom', row.base_url || '');
-          updateStmt.run(protocol, row.id);
-        }
-      }
-    }
-  } catch { /* table may not exist yet */ }
-
-  // Ensure scheduled_tasks table exists
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS scheduled_tasks (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      prompt TEXT NOT NULL,
-      schedule_type TEXT NOT NULL CHECK(schedule_type IN ('cron', 'interval', 'once')),
-      schedule_value TEXT NOT NULL,
-      next_run TEXT NOT NULL,
-      last_run TEXT,
-      last_status TEXT CHECK(last_status IN ('success', 'error', 'skipped', 'running')),
-      last_error TEXT,
-      last_result TEXT,
-      consecutive_errors INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'completed', 'disabled')),
-      priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low', 'normal', 'urgent')),
-      notify_on_complete INTEGER NOT NULL DEFAULT 1,
-      session_id TEXT,
-      working_directory TEXT,
-      permanent INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status);
-    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run);
-  `);
-
-  // Migration: add permanent column for existing databases
-  safeAddColumn(db, "ALTER TABLE scheduled_tasks ADD COLUMN permanent INTEGER NOT NULL DEFAULT 0");
-
   // Migration: set default_panel to 'file_tree' only if not already configured
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('default_panel', 'file_tree')"
   ).run();
-
-  // Task execution history
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS task_run_logs (
-      id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      result TEXT,
-      error TEXT,
-      duration_ms INTEGER,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (task_id) REFERENCES scheduled_tasks(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_task_run_logs_task_id ON task_run_logs(task_id);
-  `);
 }
 
 // ==========================================
@@ -967,7 +788,6 @@ export function createSession(
   systemPrompt?: string,
   workingDirectory?: string,
   mode?: string,
-  providerId?: string,
   permissionProfile?: string,
 ): ChatSession {
   const db = getDb();
@@ -976,9 +796,11 @@ export function createSession(
   const wd = workingDirectory || '';
   const projectName = path.basename(wd);
 
+  // chat_sessions.provider_id and provider_name remain as dead columns from
+  // the legacy provider system. New sessions never write to them.
   db.prepare(
-    'INSERT INTO chat_sessions (id, title, created_at, updated_at, model, system_prompt, working_directory, sdk_session_id, project_name, status, mode, sdk_cwd, provider_id, permission_profile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, title || 'New Chat', now, now, model || '', systemPrompt || '', wd, '', projectName, 'active', mode || 'code', wd, providerId || '', permissionProfile || 'default');
+    'INSERT INTO chat_sessions (id, title, created_at, updated_at, model, system_prompt, working_directory, sdk_session_id, project_name, status, mode, sdk_cwd, permission_profile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, title || 'New Chat', now, now, model || '', systemPrompt || '', wd, '', projectName, 'active', mode || 'code', wd, permissionProfile || 'default');
 
   return getSession(id)!;
 }
@@ -1015,35 +837,6 @@ export function updateSdkSessionId(id: string, sdkSessionId: string): void {
 export function updateSessionModel(id: string, model: string): void {
   const db = getDb();
   db.prepare('UPDATE chat_sessions SET model = ? WHERE id = ?').run(model, id);
-}
-
-export function updateSessionProvider(id: string, providerName: string): void {
-  const db = getDb();
-  db.prepare('UPDATE chat_sessions SET provider_name = ? WHERE id = ?').run(providerName, id);
-}
-
-export function updateSessionProviderId(id: string, providerId: string): void {
-  const db = getDb();
-  db.prepare('UPDATE chat_sessions SET provider_id = ? WHERE id = ?').run(providerId, id);
-}
-
-export function getDefaultProviderId(): string | undefined {
-  // Primary source: derived from global default model's provider
-  const globalProvider = getSetting('global_default_model_provider');
-  if (globalProvider) return globalProvider;
-  // Legacy fallback: old default_provider_id setting (for migration)
-  return getSetting('default_provider_id') || undefined;
-}
-
-export function setDefaultProviderId(id: string): void {
-  // Write legacy setting
-  setSetting('default_provider_id', id);
-  // Also write the primary key so getDefaultProviderId() sees the change.
-  // Clear global_default_model at the same time — the old model belonged to
-  // the previous provider and is no longer valid. The UI will fall back to
-  // the provider's first model until the user picks a new default.
-  setSetting('global_default_model_provider', id);
-  setSetting('global_default_model', '');
 }
 
 export function updateSessionWorkingDirectory(id: string, workingDirectory: string): void {
@@ -1216,308 +1009,6 @@ export function updateSessionStatus(id: string, status: 'active' | 'archived'): 
 }
 
 // ==========================================
-// Task Operations
-// ==========================================
-
-export function getTasksBySession(sessionId: string): TaskItem[] {
-  const db = getDb();
-  return db.prepare('SELECT * FROM tasks WHERE session_id = ? ORDER BY sort_order ASC, created_at ASC').all(sessionId) as TaskItem[];
-}
-
-export function getTask(id: string): TaskItem | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskItem | undefined;
-}
-
-export function createTask(sessionId: string, title: string, description?: string): TaskItem {
-  const db = getDb();
-  const id = crypto.randomBytes(16).toString('hex');
-  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
-
-  db.prepare(
-    'INSERT INTO tasks (id, session_id, title, status, description, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, sessionId, title, 'pending', description || null, 'user', now, now);
-
-  return getTask(id)!;
-}
-
-export function updateTask(id: string, updates: { title?: string; status?: TaskStatus; description?: string }): TaskItem | undefined {
-  const db = getDb();
-  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
-  const existing = getTask(id);
-  if (!existing) return undefined;
-
-  const title = updates.title ?? existing.title;
-  const status = updates.status ?? existing.status;
-  const description = updates.description !== undefined ? updates.description : existing.description;
-
-  db.prepare(
-    'UPDATE tasks SET title = ?, status = ?, description = ?, updated_at = ? WHERE id = ?'
-  ).run(title, status, description, now, id);
-
-  return getTask(id);
-}
-
-export function deleteTask(id: string): boolean {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
-  return result.changes > 0;
-}
-
-/**
- * Sync SDK tasks (from TodoWrite tool) into the tasks table.
- * Replace-all strategy: delete all source='sdk' tasks for this session,
- * then insert the new list. User-created tasks (source='user') are untouched.
- */
-export function syncSdkTasks(
-  sessionId: string,
-  todos: Array<{ id: string; content: string; status: string; activeForm?: string }>
-): void {
-  const db = getDb();
-  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
-
-  // Map SDK status to local TaskStatus
-  const mapStatus = (s: string): TaskStatus => {
-    switch (s) {
-      case 'completed': return 'completed';
-      case 'in_progress': return 'in_progress';
-      case 'pending': return 'pending';
-      default: return 'pending';
-    }
-  };
-
-  console.log('[db] syncSdkTasks:', sessionId, 'todos count:', todos.length);
-
-  const txn = db.transaction(() => {
-    // Delete all SDK-sourced tasks for this session
-    db.prepare("DELETE FROM tasks WHERE session_id = ? AND source = 'sdk'").run(sessionId);
-
-    // Insert new SDK tasks with stable sort_order
-    const insert = db.prepare(
-      'INSERT INTO tasks (id, session_id, title, status, description, source, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    );
-    for (let i = 0; i < todos.length; i++) {
-      const todo = todos[i];
-      const taskId = `sdk-${sessionId}-${todo.id}`;
-      insert.run(taskId, sessionId, todo.content, mapStatus(todo.status), todo.activeForm || null, 'sdk', i, now, now);
-    }
-  });
-  txn();
-}
-
-// ==========================================
-// API Provider Operations
-// ==========================================
-
-export function getAllProviders(): ApiProvider[] {
-  const db = getDb();
-  return db.prepare('SELECT * FROM api_providers ORDER BY sort_order ASC, created_at ASC').all() as ApiProvider[];
-}
-
-export function getProvider(id: string): ApiProvider | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM api_providers WHERE id = ?').get(id) as ApiProvider | undefined;
-}
-
-export function getActiveProvider(): ApiProvider | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM api_providers WHERE is_active = 1 LIMIT 1').get() as ApiProvider | undefined;
-}
-
-export function createProvider(data: CreateProviderRequest): ApiProvider {
-  const db = getDb();
-  const id = crypto.randomBytes(16).toString('hex');
-  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
-
-  // Get max sort_order to append at end
-  const maxRow = db.prepare('SELECT MAX(sort_order) as max_order FROM api_providers').get() as { max_order: number | null };
-  const sortOrder = (maxRow.max_order ?? -1) + 1;
-
-  db.prepare(
-    `INSERT INTO api_providers (id, name, provider_type, protocol, base_url, api_key, is_active, sort_order, extra_env, headers_json, env_overrides_json, role_models_json, options_json, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    data.name,
-    data.provider_type || 'anthropic',
-    data.protocol || '',
-    data.base_url || '',
-    data.api_key || '',
-    0,
-    sortOrder,
-    data.extra_env || '{}',
-    data.headers_json || '{}',
-    data.env_overrides_json || '',
-    data.role_models_json || '{}',
-    data.options_json || '{}',
-    data.notes || '',
-    now,
-    now,
-  );
-
-  return getProvider(id)!;
-}
-
-export function updateProvider(id: string, data: UpdateProviderRequest): ApiProvider | undefined {
-  const db = getDb();
-  const existing = getProvider(id);
-  if (!existing) return undefined;
-
-  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
-  const name = data.name ?? existing.name;
-  const providerType = data.provider_type ?? existing.provider_type;
-  const protocol = data.protocol ?? existing.protocol;
-  const baseUrl = data.base_url ?? existing.base_url;
-  const apiKey = data.api_key ?? existing.api_key;
-  const extraEnv = data.extra_env ?? existing.extra_env;
-  const headersJson = data.headers_json ?? existing.headers_json;
-  const envOverridesJson = data.env_overrides_json ?? existing.env_overrides_json;
-  const roleModelsJson = data.role_models_json ?? existing.role_models_json;
-  const optionsJson = data.options_json ?? existing.options_json;
-  const notes = data.notes ?? existing.notes;
-  const sortOrder = data.sort_order ?? existing.sort_order;
-
-  db.prepare(
-    `UPDATE api_providers SET name = ?, provider_type = ?, protocol = ?, base_url = ?, api_key = ?,
-     extra_env = ?, headers_json = ?, env_overrides_json = ?, role_models_json = ?, options_json = ?,
-     notes = ?, sort_order = ?, updated_at = ? WHERE id = ?`
-  ).run(name, providerType, protocol, baseUrl, apiKey, extraEnv, headersJson, envOverridesJson, roleModelsJson, optionsJson, notes, sortOrder, now, id);
-
-  return getProvider(id);
-}
-
-export function deleteProvider(id: string): boolean {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM api_providers WHERE id = ?').run(id);
-  return result.changes > 0;
-}
-
-// ── Provider Options ────────────────────────────────────────────
-
-/**
- * Get options for a provider. For 'env' provider, reads from settings table.
- * For DB providers, reads from options_json column.
- */
-export function getProviderOptions(providerId: string): import('@/types').ProviderOptions {
-  if (providerId === '__global__') {
-    const defaultModel = getSetting('global_default_model') || undefined;
-    const defaultModelProvider = getSetting('global_default_model_provider') || undefined;
-    return {
-      ...(defaultModel ? { default_model: defaultModel } : {}),
-      ...(defaultModelProvider ? { default_model_provider: defaultModelProvider } : {}),
-    };
-  }
-  if (providerId === 'env') {
-    const thinkingMode = getSetting('thinking_mode') || 'adaptive';
-    const context1m = getSetting('context_1m') === 'true';
-    return {
-      thinking_mode: thinkingMode as 'adaptive' | 'enabled' | 'disabled',
-      context_1m: context1m,
-    };
-  }
-  const provider = getProvider(providerId);
-  if (!provider) return {};
-  try {
-    return JSON.parse(provider.options_json || '{}');
-  } catch { return {}; }
-}
-
-/**
- * Set options for a provider. For 'env' provider, writes to settings table.
- * For DB providers, writes to options_json column.
- */
-export function setProviderOptions(providerId: string, options: import('@/types').ProviderOptions): void {
-  if (providerId === '__global__') {
-    if (options.default_model !== undefined) setSetting('global_default_model', options.default_model);
-    if (options.default_model_provider !== undefined) setSetting('global_default_model_provider', options.default_model_provider);
-    // Sync legacy default_provider_id so backend consumers (doctor, repair, etc.) stay consistent
-    if ((options as Record<string, unknown>).legacy_default_provider_id !== undefined) {
-      setSetting('default_provider_id', (options as Record<string, unknown>).legacy_default_provider_id as string);
-    }
-    return;
-  }
-  if (providerId === 'env') {
-    if (options.thinking_mode !== undefined) setSetting('thinking_mode', options.thinking_mode);
-    if (options.context_1m !== undefined) setSetting('context_1m', options.context_1m ? 'true' : '');
-    return;
-  }
-  const db = getDb();
-  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
-  db.prepare('UPDATE api_providers SET options_json = ?, updated_at = ? WHERE id = ?')
-    .run(JSON.stringify(options), now, providerId);
-}
-
-// ── Provider Models ─────────────────────────────────────────────
-
-export function getModelsForProvider(providerId: string): import('@/types').ProviderModel[] {
-  const db = getDb();
-  return db.prepare(
-    'SELECT * FROM provider_models WHERE provider_id = ? AND enabled = 1 ORDER BY sort_order ASC, created_at ASC'
-  ).all(providerId) as import('@/types').ProviderModel[];
-}
-
-export function upsertProviderModel(data: {
-  provider_id: string;
-  model_id: string;
-  upstream_model_id?: string;
-  display_name?: string;
-  capabilities_json?: string;
-  variants_json?: string;
-  sort_order?: number;
-  enabled?: number;
-}): void {
-  const db = getDb();
-  const id = crypto.randomBytes(16).toString('hex');
-  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
-  db.prepare(
-    `INSERT INTO provider_models (id, provider_id, model_id, upstream_model_id, display_name, capabilities_json, variants_json, sort_order, enabled, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(provider_id, model_id) DO UPDATE SET
-       upstream_model_id = excluded.upstream_model_id,
-       display_name = excluded.display_name,
-       capabilities_json = excluded.capabilities_json,
-       variants_json = excluded.variants_json,
-       sort_order = excluded.sort_order,
-       enabled = excluded.enabled`
-  ).run(
-    id,
-    data.provider_id,
-    data.model_id,
-    data.upstream_model_id || '',
-    data.display_name || '',
-    data.capabilities_json || '{}',
-    data.variants_json || '{}',
-    data.sort_order ?? 0,
-    data.enabled ?? 1,
-    now,
-  );
-}
-
-export function deleteProviderModel(providerId: string, modelId: string): boolean {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM provider_models WHERE provider_id = ? AND model_id = ?').run(providerId, modelId);
-  return result.changes > 0;
-}
-
-export function activateProvider(id: string): boolean {
-  const db = getDb();
-  const existing = getProvider(id);
-  if (!existing) return false;
-
-  const transaction = db.transaction(() => {
-    db.prepare('UPDATE api_providers SET is_active = 0').run();
-    db.prepare('UPDATE api_providers SET is_active = 1 WHERE id = ?').run(id);
-  });
-  transaction();
-  return true;
-}
-
-export function deactivateAllProviders(): void {
-  const db = getDb();
-  db.prepare('UPDATE api_providers SET is_active = 0').run();
-}
-
-// ==========================================
 // Token Usage Statistics
 // ==========================================
 
@@ -1572,11 +1063,7 @@ export function getTokenUsageStats(days: number = 30, now?: Date): {
   const rawRows = db.prepare(`
     SELECT
       m.created_at,
-      CASE
-        WHEN COALESCE(NULLIF(s.provider_name, ''), '') != ''
-        THEN s.provider_name
-        ELSE COALESCE(NULLIF(s.model, ''), 'unknown')
-      END AS model,
+      COALESCE(NULLIF(s.model, ''), 'unknown') AS model,
       COALESCE(json_extract(m.token_usage, '$.input_tokens'), 0) AS input_tokens,
       COALESCE(json_extract(m.token_usage, '$.output_tokens'), 0) AS output_tokens,
       COALESCE(json_extract(m.token_usage, '$.cost_usd'), 0) AS cost
@@ -2602,66 +2089,6 @@ export function bulkUpsertCliToolDescriptions(entries: Array<{ toolId: string; z
  * In WAL mode, this ensures the WAL is checkpointed and the
  * -wal/-shm files are cleaned up properly.
  */
-// ==========================================
-// Scheduled Tasks
-// ==========================================
-
-export function createScheduledTask(task: Omit<ScheduledTask, 'id' | 'created_at' | 'updated_at'>): ScheduledTask {
-  const db = getDb();
-  const id = crypto.randomBytes(8).toString('hex');
-  db.prepare(`INSERT INTO scheduled_tasks (id, name, prompt, schedule_type, schedule_value, next_run, status, priority, notify_on_complete, session_id, working_directory, consecutive_errors) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`).run(
-    id, task.name, task.prompt, task.schedule_type, task.schedule_value, task.next_run, task.status || 'active', task.priority || 'normal', task.notify_on_complete ?? 1, task.session_id || null, task.working_directory || null
-  );
-  return getScheduledTask(id)!;
-}
-
-export function getScheduledTask(id: string): ScheduledTask | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(id) as ScheduledTask | undefined;
-}
-
-export function listScheduledTasks(opts?: { status?: string }): ScheduledTask[] {
-  const db = getDb();
-  if (opts?.status) {
-    return db.prepare('SELECT * FROM scheduled_tasks WHERE status = ? ORDER BY next_run ASC').all(opts.status) as ScheduledTask[];
-  }
-  return db.prepare('SELECT * FROM scheduled_tasks ORDER BY created_at DESC').all() as ScheduledTask[];
-}
-
-export function getDueTasks(): ScheduledTask[] {
-  const db = getDb();
-  return db.prepare("SELECT * FROM scheduled_tasks WHERE next_run <= datetime('now') AND status = 'active' AND (last_status IS NULL OR last_status != 'running')").all() as ScheduledTask[];
-}
-
-export function updateScheduledTask(id: string, updates: Partial<ScheduledTask>): void {
-  const db = getDb();
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  for (const [key, value] of Object.entries(updates)) {
-    if (key === 'id' || key === 'created_at') continue;
-    fields.push(`${key} = ?`);
-    values.push(value);
-  }
-  if (fields.length === 0) return;
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-  db.prepare(`UPDATE scheduled_tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-}
-
-export function insertTaskRunLog(log: { task_id: string; status: string; result?: string; error?: string; duration_ms: number }): void {
-  const db = getDb();
-  const id = crypto.randomBytes(8).toString('hex');
-  db.prepare('INSERT INTO task_run_logs (id, task_id, status, result, error, duration_ms) VALUES (?, ?, ?, ?, ?, ?)').run(
-    id, log.task_id, log.status, log.result || null, log.error || null, log.duration_ms
-  );
-}
-
-export function deleteScheduledTask(id: string): boolean {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
-  return result.changes > 0;
-}
-
 export function closeDb(): void {
   if (db) {
     try {

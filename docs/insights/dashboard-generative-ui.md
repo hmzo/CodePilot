@@ -236,7 +236,7 @@ interface DashboardContext {
 2. **刷新延迟**：模型生成 widget 需要几秒，多个卡片串行刷新体验差。需要并行刷新 + 骨架屏。
 3. **数据契约漂移**：数据源文件结构变化后，原有数据契约可能失效。需要错误检测和自动修复机制。
 4. **MCP 依赖**：外部 MCP server 的稳定性不可控，看板卡片可能因 MCP 故障显示空白。
-5. **第三方 API Provider 限制**：同现有 widget 系统——部分三方 provider 不处理 appendSystemPrompt，widget 功能可能不可用。
+5. **第三方 API 网关限制**：同现有 widget 系统——若 `~/.claude/settings.json` 把 `ANTHROPIC_BASE_URL` 改到第三方网关，部分网关不会原样转发 SDK 的 `appendSystemPrompt`，widget 功能可能不可用。
 
 ## 技术调研：Pretext 文本排版库
 

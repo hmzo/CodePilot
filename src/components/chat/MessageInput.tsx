@@ -29,13 +29,10 @@ import { PENDING_KEY, setRefImages, deleteRefImages } from '@/lib/image-ref-stor
 import { IMAGE_AGENT_SYSTEM_PROMPT } from '@/lib/constants/image-agent-prompt';
 import { dataUrlToFileAttachment } from '@/lib/file-utils';
 import { usePopoverState } from '@/hooks/usePopoverState';
-import { useProviderModels } from '@/hooks/useProviderModels';
 import { useCommandBadge } from '@/hooks/useCommandBadge';
 import { useCliToolsFetch } from '@/hooks/useCliToolsFetch';
 import { useSlashCommands } from '@/hooks/useSlashCommands';
 import { resolveKeyAction, cycleIndex, resolveDirectSlash, dispatchBadge, buildCliAppend } from '@/lib/message-input-logic';
-import { QuickActions } from './QuickActions';
-
 interface MessageInputProps {
   onSend: (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string) => void;
   onCommand?: (command: string) => void;
@@ -45,8 +42,6 @@ interface MessageInputProps {
   sessionId?: string;
   modelName?: string;
   onModelChange?: (model: string) => void;
-  providerId?: string;
-  onProviderModelChange?: (providerId: string, model: string) => void;
   workingDirectory?: string;
   onAssistantTrigger?: () => void;
   /** Effort selection lifted to parent for inclusion in the stream chain */
@@ -56,10 +51,6 @@ interface MessageInputProps {
   sdkInitMeta?: { tools?: unknown; slash_commands?: unknown; skills?: unknown } | null;
   /** Initial value to prefill in the input */
   initialValue?: string;
-  /** Whether this session is an assistant workspace project */
-  isAssistantProject?: boolean;
-  /** Whether the session already has messages */
-  hasMessages?: boolean;
 }
 
 export function MessageInput({
@@ -71,16 +62,12 @@ export function MessageInput({
   sessionId,
   modelName,
   onModelChange,
-  providerId,
-  onProviderModelChange,
   workingDirectory,
   onAssistantTrigger,
   effort: effortProp,
   onEffortChange,
   sdkInitMeta,
   initialValue,
-  isAssistantProject,
-  hasMessages,
 }: MessageInputProps) {
   const { t, locale } = useTranslation();
   const imageGen = useImageGen();
@@ -91,24 +78,7 @@ export function MessageInput({
   // but since this component remounts on navigation, useState(initialValue) is sufficient.
   const [inputValue, setInputValue] = useState(initialValue || '');
 
-  // --- Extracted hooks ---
   const popover = usePopoverState(modelName);
-  const { providerGroups, currentProviderIdValue, modelOptions, currentModelOption, globalDefaultModel, globalDefaultProvider } = useProviderModels(providerId, modelName);
-
-  // Auto-correct model when it doesn't exist in the current provider's model list.
-  // This prevents sending an unsupported model name (e.g. 'opus' to MiniMax which only has 'sonnet').
-  // IMPORTANT: Only fall back to first model — never use globalDefaultModel here.
-  // Global default model is only for NEW conversations (chat/page.tsx).
-  // Existing sessions must keep their own selected model; if that model becomes
-  // invalid (provider changed), fall back to the provider's first model, not the
-  // global default, to avoid overwriting the session's model choice.
-  useEffect(() => {
-    if (modelName && modelOptions.length > 0 && !modelOptions.some(m => m.value === modelName)) {
-      const fallback = modelOptions[0].value;
-      onModelChange?.(fallback);
-      onProviderModelChange?.(currentProviderIdValue, fallback);
-    }
-  }, [modelName, modelOptions, currentProviderIdValue, onModelChange, onProviderModelChange]);
 
   const { badge, setBadge, cliBadge, setCliBadge, removeBadge, removeCliBadge, hasBadge } = useCommandBadge(textareaRef);
 
@@ -328,9 +298,9 @@ export function MessageInput({
     [popover, slashCommands, cliToolsFetch, badge, cliBadge, inputValue, removeBadge, removeCliBadge]
   );
 
-  // Effort selector state — guard against undefined when model not found in current provider's list
-  const currentModelMeta = currentModelOption as (typeof currentModelOption & { supportsEffort?: boolean; supportedEffortLevels?: string[] }) | undefined;
-  const showEffortSelector = currentModelMeta?.supportsEffort === true;
+  // Effort selector — built-in Anthropic models do not advertise effort levels through
+  // CodePilot's UI; the SDK reads thinking config from settings/options directly.
+  const showEffortSelector = false;
   const [localEffort, setLocalEffort] = useState<string>('high');
   const selectedEffort = effortProp ?? localEffort;
   const setSelectedEffort = useCallback((v: string) => {
@@ -338,7 +308,7 @@ export function MessageInput({
     onEffortChange?.(v);
   }, [onEffortChange]);
 
-  const currentModelValue = modelName || 'sonnet';
+  const currentModelValue = modelName || 'claude-sonnet-4-6';
   const chatStatus: ChatStatus = isStreaming ? 'streaming' : 'ready';
 
   return (
@@ -381,17 +351,6 @@ export function MessageInput({
               onFocusTextarea={() => textareaRef.current?.focus()}
             />
           )}
-
-          {/* Quick Actions — memory-driven suggestion chips */}
-          <QuickActions
-            isAssistantProject={!!isAssistantProject}
-            hasMessages={!!hasMessages}
-            onAction={(text) => {
-              onSend(text);
-              // Clear input after send to avoid stale text
-              setInputValue('');
-            }}
-          />
 
           {/* PromptInput replaces the old input area */}
           <PromptInput
@@ -448,21 +407,14 @@ export function MessageInput({
                 {/* Model selector */}
                 <ModelSelectorDropdown
                   currentModelValue={currentModelValue}
-                  currentProviderIdValue={currentProviderIdValue}
-                  providerGroups={providerGroups}
-                  modelOptions={modelOptions}
                   onModelChange={onModelChange}
-                  onProviderModelChange={onProviderModelChange}
-                  globalDefaultModel={globalDefaultModel}
-                  globalDefaultProvider={globalDefaultProvider}
                 />
 
-                {/* Effort selector — only visible when model supports effort */}
+                {/* Effort selector — disabled for built-in Anthropic models */}
                 {showEffortSelector && (
                   <EffortSelectorDropdown
                     selectedEffort={selectedEffort}
                     onEffortChange={setSelectedEffort}
-                    supportedEffortLevels={currentModelMeta?.supportedEffortLevels}
                   />
                 )}
 

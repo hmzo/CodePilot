@@ -14,7 +14,6 @@ import {
   getSession,
   createSession,
   getSetting,
-  updateSessionProviderId,
   updateSessionWorkingDirectory,
   updateSdkSessionId,
 } from '../db';
@@ -97,7 +96,6 @@ export function createBinding(
   ]);
   const defaultCwd = resolved.path;
   const defaultModel = getSetting('bridge_default_model') || '';
-  const defaultProviderId = getSetting('bridge_default_provider_id') || '';
 
   const displayName = address.displayName || address.chatId;
   const session = createSession(
@@ -107,10 +105,6 @@ export function createBinding(
     defaultCwd,
     'code',
   );
-
-  if (defaultProviderId) {
-    updateSessionProviderId(session.id, defaultProviderId);
-  }
 
   return upsertChannelBinding({
     channelType: address.channelType,

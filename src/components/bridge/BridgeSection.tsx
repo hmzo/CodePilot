@@ -4,15 +4,6 @@ import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { SpinnerGap, CheckCircle, Warning, TelegramLogo, ChatTeardrop, GameController, ChatsCircle } from "@/components/ui/icon";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useBridgeStatus } from "@/hooks/useBridgeStatus";
@@ -20,7 +11,6 @@ import { showToast } from "@/hooks/useToast";
 import { SettingsCard } from "@/components/patterns/SettingsCard";
 import { FieldRow } from "@/components/patterns/FieldRow";
 import { StatusBanner } from "@/components/patterns/StatusBanner";
-import type { ProviderModelGroup } from "@/types";
 
 interface BridgeSettings {
   remote_bridge_enabled: string;
@@ -32,7 +22,6 @@ interface BridgeSettings {
   bridge_auto_start: string;
   bridge_default_work_dir: string;
   bridge_default_model: string;
-  bridge_default_provider_id: string;
 }
 
 const DEFAULT_SETTINGS: BridgeSettings = {
@@ -45,7 +34,6 @@ const DEFAULT_SETTINGS: BridgeSettings = {
   bridge_auto_start: "",
   bridge_default_work_dir: "",
   bridge_default_model: "",
-  bridge_default_provider_id: "",
 };
 
 export function BridgeSection() {
@@ -53,7 +41,6 @@ export function BridgeSection() {
   const [saving, setSaving] = useState(false);
   const [workDir, setWorkDir] = useState("");
   const [model, setModel] = useState("");
-  const [providerGroups, setProviderGroups] = useState<ProviderModelGroup[]>([]);
   const { bridgeStatus, starting, stopping, startBridge, stopBridge } = useBridgeStatus();
   const { t } = useTranslation();
 
@@ -65,28 +52,7 @@ export function BridgeSection() {
         const s = { ...DEFAULT_SETTINGS, ...data.settings };
         setSettings(s);
         setWorkDir(s.bridge_default_work_dir);
-        // Build composite value for Select: "provider_id::model"
-        if (s.bridge_default_provider_id && s.bridge_default_model) {
-          setModel(`${s.bridge_default_provider_id}::${s.bridge_default_model}`);
-        } else if (s.bridge_default_model) {
-          setModel(s.bridge_default_model);
-        } else {
-          setModel("");
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const fetchModels = useCallback(async () => {
-    try {
-      const res = await fetch("/api/providers/models");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.groups && data.groups.length > 0) {
-          setProviderGroups(data.groups);
-        }
+        setModel(s.bridge_default_model || "");
       }
     } catch {
       // ignore
@@ -95,8 +61,7 @@ export function BridgeSection() {
 
   useEffect(() => {
     fetchSettings();
-    fetchModels();
-  }, [fetchSettings, fetchModels]);
+  }, [fetchSettings]);
 
   const saveSettings = async (updates: Partial<BridgeSettings>) => {
     setSaving(true);
@@ -141,14 +106,9 @@ export function BridgeSection() {
   };
 
   const handleSaveDefaults = () => {
-    // Split composite "provider_id::model" value
-    const parts = model.split("::");
-    const providerId = parts.length === 2 ? parts[0] : "";
-    const modelValue = parts.length === 2 ? parts[1] : model;
     saveSettings({
       bridge_default_work_dir: workDir,
-      bridge_default_model: modelValue,
-      bridge_default_provider_id: providerId,
+      bridge_default_model: model.trim(),
     });
   };
 
@@ -460,35 +420,12 @@ export function BridgeSection() {
               <label className="text-xs font-medium text-muted-foreground mb-1 block">
                 {t("bridge.defaultModel")}
               </label>
-              {providerGroups.length > 0 ? (
-                <Select value={model} onValueChange={setModel}>
-                  <SelectTrigger className="w-full text-sm font-mono">
-                    <SelectValue placeholder={t("bridge.defaultModelHint")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {providerGroups.map((group) => (
-                      <SelectGroup key={group.provider_id}>
-                        <SelectLabel>{group.provider_name}</SelectLabel>
-                        {group.models.map((m) => (
-                          <SelectItem
-                            key={`${group.provider_id}::${m.value}`}
-                            value={`${group.provider_id}::${m.value}`}
-                          >
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder="sonnet"
-                  className="font-mono text-sm"
-                />
-              )}
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="sonnet"
+                className="font-mono text-sm"
+              />
               <p className="text-xs text-muted-foreground mt-1">
                 {t("bridge.defaultModelHint")}
               </p>

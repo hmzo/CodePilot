@@ -54,7 +54,7 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { providerId, model: requestModel } = body as { providerId?: string; model?: string };
+    const { model: requestModel } = body as { model?: string };
 
     const toolName = catalogTool?.name ?? extraEntry?.[1] ?? customTool?.name ?? id;
     const binNames = catalogTool?.binNames.join(', ') ?? extraEntry?.[2] ?? customTool?.binName ?? id;
@@ -132,7 +132,6 @@ Respond in this exact JSON format (no markdown, no code fences, just raw JSON):
       let result: string;
       try {
         result = await generateTextViaSdk({
-          providerId: providerId || undefined,
           model: requestModel || undefined,
           system: 'You are a technical documentation writer. Respond with raw JSON only, no markdown formatting.',
           prompt: attempt > 1
@@ -146,7 +145,7 @@ Respond in this exact JSON format (no markdown, no code fences, just raw JSON):
       }
 
       if (!result || !result.trim()) {
-        lastError = 'AI returned an empty response. Please check your provider configuration.';
+        lastError = 'AI returned an empty response. Check ~/.claude/settings.json or run `claude` to authenticate.';
         continue;
       }
 

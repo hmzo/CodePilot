@@ -11,12 +11,12 @@ import { ChatPermissionSelector } from '@/components/chat/ChatPermissionSelector
 import { ImageGenToggle } from '@/components/chat/ImageGenToggle';
 import { PermissionPrompt } from '@/components/chat/PermissionPrompt';
 import { ChatEmptyState } from '@/components/chat/ChatEmptyState';
-import { OnboardingWizard } from '@/components/assistant/OnboardingWizard';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { FolderPicker } from '@/components/chat/FolderPicker';
 import { useNativeFolderPicker } from '@/hooks/useNativeFolderPicker';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
+import { DEFAULT_MODEL_ID, SELECTED_MODEL_STORAGE_KEY } from '@/lib/anthropic-models';
 
 interface ToolUseInfo {
   id: string;
@@ -51,31 +51,20 @@ export default function NewChatPage() {
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [errorBanner, setErrorBanner] = useState<{ message: string; description?: string } | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
-  const [hasProvider, setHasProvider] = useState(true); // assume true until checked
-  const [showWizard, setShowWizard] = useState(false);
   const [assistantConfigured, setAssistantConfigured] = useState(false);
-  const [assistantWorkspacePath, setAssistantWorkspacePath] = useState('');
   const [mode, setMode] = useState('code');
-  // Model/provider start empty — populated by the async global-default fetch.
-  // This prevents the race where a user sends before the fetch completes and
-  // gets the stale localStorage model instead of the configured default.
-  const [modelReady, setModelReady] = useState(false);
+  // Model is read once from localStorage (synchronously). Credentials live in
+  // ~/.claude — CodePilot no longer manages providers, so there is no async
+  // global-default to wait for.
   const [currentModel, setCurrentModel] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    // One-time migration: clear stale model/provider from pre-0.38 installs
-    if (!localStorage.getItem('codepilot:migration-038')) {
+    if (typeof window === 'undefined') return DEFAULT_MODEL_ID;
+    // One-time migration: clear stale provider/model keys from pre-removal installs.
+    if (!localStorage.getItem('codepilot:migration-remove-provider')) {
       localStorage.removeItem('codepilot:last-model');
       localStorage.removeItem('codepilot:last-provider-id');
-      localStorage.setItem('codepilot:migration-038', '1');
+      localStorage.setItem('codepilot:migration-remove-provider', '1');
     }
-    return '';
-  });
-  const [currentProviderId, setCurrentProviderId] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    if (!localStorage.getItem('codepilot:migration-038')) {
-      return '';
-    }
-    return '';
+    return localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) || DEFAULT_MODEL_ID;
   });
   const [pendingPermission, setPendingPermission] = useState<PermissionRequestEvent | null>(null);
   const [permissionResolved, setPermissionResolved] = useState<'allow' | 'deny' | null>(null);
@@ -85,110 +74,16 @@ export default function NewChatPage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   // Effort level — lifted here so the first message includes it
   const [selectedEffort, setSelectedEffort] = useState<string | undefined>(undefined);
-  // Provider options (thinking mode + 1M context)
-  const [thinkingMode, setThinkingMode] = useState<string>('adaptive');
-  const [context1m, setContext1m] = useState(false);
+  // Thinking mode + 1M context — managed locally now (no per-provider config).
+  const [thinkingMode] = useState<string>('adaptive');
+  const [context1m] = useState(false);
 
-  // Fetch provider-specific options (with abort to prevent stale responses on fast switch)
-  useEffect(() => {
-    const pid = currentProviderId || 'env';
-    const controller = new AbortController();
-    fetch(`/api/providers/options?providerId=${encodeURIComponent(pid)}`, { signal: controller.signal })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!controller.signal.aborted) {
-          setThinkingMode(data?.options?.thinking_mode || 'adaptive');
-          setContext1m(!!data?.options?.context_1m);
-        }
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [currentProviderId]);
-
-  // Validate restored model/provider against actual available providers/models.
-  // For NEW conversations, the global default model takes priority
-  // over localStorage's last-model (which is a cross-session global memory).
-  useEffect(() => {
-    let cancelled = false;
-
-    // Fetch models and global default in parallel
-    const modelsP = fetch('/api/providers/models').then(r => r.ok ? r.json() : null);
-    const globalP = fetch('/api/providers/options?providerId=__global__').then(r => r.ok ? r.json() : null);
-
-    Promise.all([modelsP, globalP]).then(([modelsData, globalData]) => {
-      if (cancelled || !modelsData?.groups || modelsData.groups.length === 0) {
-        // No provider data — fall back to localStorage best-effort
-        const savedModel = localStorage.getItem('codepilot:last-model') || 'sonnet';
-        const savedProvider = localStorage.getItem('codepilot:last-provider-id') || '';
-        setCurrentModel(savedModel);
-        setCurrentProviderId(savedProvider);
-        setModelReady(true);
-        return;
-      }
-      const groups = modelsData.groups as Array<{ provider_id: string; models: Array<{ value: string }> }>;
-      const globalDefaultModel = globalData?.options?.default_model || '';
-      const globalDefaultProvider = globalData?.options?.default_model_provider || '';
-
-      // Apply global default for new conversations
-      // Case 1: both provider and model are set and valid
-      if (globalDefaultModel && globalDefaultProvider) {
-        const targetGroup = groups.find(g => g.provider_id === globalDefaultProvider);
-        const modelValid = targetGroup?.models.some(m => m.value === globalDefaultModel);
-        if (modelValid) {
-          setCurrentModel(globalDefaultModel);
-          setCurrentProviderId(globalDefaultProvider);
-          setModelReady(true);
-          return;
-        }
-      }
-      // Case 2: provider is set but model was cleared (e.g. after doctor repair / provider delete)
-      // → use that provider's first available model
-      if (globalDefaultProvider && !globalDefaultModel) {
-        const targetGroup = groups.find(g => g.provider_id === globalDefaultProvider);
-        if (targetGroup?.models?.length) {
-          setCurrentModel(targetGroup.models[0].value);
-          setCurrentProviderId(globalDefaultProvider);
-          setModelReady(true);
-          return;
-        }
-      }
-
-      // No global default — use localStorage, validate against provider's list
-      const savedProvider = localStorage.getItem('codepilot:last-provider-id') || '';
-      const savedModel = localStorage.getItem('codepilot:last-model') || '';
-      const validProvider = groups.find(g => g.provider_id === savedProvider);
-      const resolvedGroup = validProvider || groups[0];
-      const resolvedPid = resolvedGroup?.provider_id || '';
-
-      if (validProvider) {
-        setCurrentProviderId(savedProvider);
-      } else {
-        setCurrentProviderId(resolvedPid);
-      }
-
-      if (resolvedGroup?.models && resolvedGroup.models.length > 0) {
-        const validModel = savedModel && resolvedGroup.models.some(m => m.value === savedModel);
-        if (validModel) {
-          setCurrentModel(savedModel);
-        } else {
-          setCurrentModel(resolvedGroup.models[0].value);
-        }
-      } else {
-        setCurrentModel(savedModel || 'sonnet');
-      }
-      setModelReady(true);
-    }).catch(() => {
-      // Fetch failed — fall back to localStorage best-effort
-      const savedModel = localStorage.getItem('codepilot:last-model') || 'sonnet';
-      const savedProvider = localStorage.getItem('codepilot:last-provider-id') || '';
-      setCurrentModel(savedModel);
-      setCurrentProviderId(savedProvider);
-      setModelReady(true);
-    });
-
-    return () => { cancelled = true; };
-   
-  }, []); // Run once on mount to validate initial values
+  const handleModelChange = useCallback((model: string) => {
+    setCurrentModel(model);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, model);
+    }
+  }, []);
 
   // Initialize workingDir from localStorage (or setup default), validating the path exists
   useEffect(() => {
@@ -252,115 +147,17 @@ export default function NewChatPage() {
       .catch(() => {});
   }, []);
 
-  // Detect assistant workspace status
+  // Detect assistant workspace status (used to decide whether the empty-state
+  // assistant card jumps straight to a chat or to the settings configure page).
   useEffect(() => {
     fetch('/api/settings/workspace')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.path && data?.valid !== false) {
-          setAssistantWorkspacePath(data.path);
           setAssistantConfigured(!!data.state?.onboardingComplete);
         }
       })
       .catch(() => {});
-  }, []);
-
-  // Check provider availability — only 'completed' counts, 'skipped' means user deferred but has no real credentials
-  useEffect(() => {
-    const checkProvider = () => {
-      // Lock sending while we re-resolve the model/provider
-      setModelReady(false);
-      fetch('/api/setup')
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (data) {
-            setHasProvider(data.provider === 'completed');
-          }
-        })
-        .catch(() => {});
-      // Sync provider/model, applying global default model for new conversations.
-      const savedProviderId = localStorage.getItem('codepilot:last-provider-id');
-
-      // Fetch models + global default in parallel
-      const modelsP = fetch('/api/providers/models').then(r => r.ok ? r.json() : null);
-      const globalP = fetch('/api/providers/options?providerId=__global__').then(r => r.ok ? r.json() : null);
-
-      Promise.all([modelsP, globalP]).then(([modelsData, globalData]) => {
-        if (!modelsData?.groups || modelsData.groups.length === 0) {
-          setModelReady(true);
-          return;
-        }
-        const groups = modelsData.groups as Array<{ provider_id: string; models: Array<{ value: string }> }>;
-        const globalDefaultModel = globalData?.options?.default_model || '';
-        const globalDefaultProvider = globalData?.options?.default_model_provider || '';
-
-        // Validate and apply provider
-        if (savedProviderId !== null) {
-          const validProvider = groups.find(g => g.provider_id === savedProviderId);
-          if (validProvider) {
-            setCurrentProviderId(savedProviderId);
-          } else {
-            setCurrentProviderId('');
-            localStorage.removeItem('codepilot:last-provider-id');
-          }
-        }
-
-        // Apply global default for new conversations
-        // Case 1: both provider and model are set and valid
-        if (globalDefaultModel && globalDefaultProvider) {
-          const targetGroup = groups.find(g => g.provider_id === globalDefaultProvider);
-          const modelValid = targetGroup?.models.some(m => m.value === globalDefaultModel);
-          if (modelValid) {
-            setCurrentModel(globalDefaultModel);
-            setCurrentProviderId(globalDefaultProvider);
-            setModelReady(true);
-            return;
-          }
-        }
-        // Case 2: provider is set but model was cleared (e.g. after doctor repair / provider delete)
-        // → use that provider's first available model
-        if (globalDefaultProvider && !globalDefaultModel) {
-          const targetGroup = groups.find(g => g.provider_id === globalDefaultProvider);
-          if (targetGroup?.models?.length) {
-            setCurrentModel(targetGroup.models[0].value);
-            setCurrentProviderId(globalDefaultProvider);
-            setModelReady(true);
-            return;
-          }
-        }
-
-        // No global default — validate current model
-        const resolvedPid = savedProviderId && groups.find(g => g.provider_id === savedProviderId)
-          ? savedProviderId
-          : groups[0]?.provider_id || '';
-        const resolvedGroup = groups.find(g => g.provider_id === resolvedPid) || groups[0];
-        setCurrentProviderId(resolvedPid);
-        if (resolvedGroup?.models?.length > 0) {
-          const savedModel = localStorage.getItem('codepilot:last-model');
-          const validModel = savedModel && resolvedGroup.models.some(
-            (m: { value: string }) => m.value === savedModel
-          );
-          if (validModel) {
-            setCurrentModel(savedModel);
-          } else {
-            const fallback = resolvedGroup.models[0].value;
-            setCurrentModel(fallback);
-            localStorage.setItem('codepilot:last-model', fallback);
-          }
-        }
-        setModelReady(true);
-      }).catch(() => {
-        // On fetch failure, still apply localStorage values as-is (best effort)
-        if (savedProviderId !== null) setCurrentProviderId(savedProviderId);
-        const savedModel = localStorage.getItem('codepilot:last-model');
-        if (savedModel) setCurrentModel(savedModel);
-        setModelReady(true);
-      });
-    };
-    checkProvider();
-
-    window.addEventListener('provider-changed', checkProvider);
-    return () => window.removeEventListener('provider-changed', checkProvider);
   }, []);
 
   const handleSelectFolder = useCallback(async () => {
@@ -430,21 +227,9 @@ export default function NewChatPage() {
     async (content: string, _files?: unknown, systemPromptAppend?: string, displayOverride?: string) => {
       if (isStreaming) return;
 
-      // Wait for model/provider to be resolved from the global default before allowing send
-      if (!modelReady) return;
-
       // Require a project directory before sending
       if (!workingDir.trim()) {
         setErrorBanner({ message: t('chat.empty.noDirectory') });
-        return;
-      }
-
-      // Require a provider before sending
-      if (!hasProvider) {
-        setErrorBanner({
-          message: t('error.providerUnavailable'),
-          description: t('chat.empty.noProvider'),
-        });
         return;
       }
 
@@ -460,14 +245,13 @@ export default function NewChatPage() {
       let sessionId = '';
 
       try {
-        // Create a new session with working directory + model/provider
+        // Create a new session with working directory + model
         const createBody: Record<string, string> = {
           title: content.slice(0, 50),
           mode,
           working_directory: workingDir.trim(),
           permission_profile: permissionProfile,
           model: currentModel,
-          provider_id: currentProviderId,
         };
 
         const createRes = await fetch('/api/chat/sessions', {
@@ -513,7 +297,6 @@ export default function NewChatPage() {
             content,
             mode,
             model: currentModel,
-            provider_id: currentProviderId,
             ...(systemPromptAppend ? { systemPromptAppend } : {}),
             ...(selectedEffort ? { effort: selectedEffort } : {}),
             ...(thinkingConfig ? { thinking: thinkingConfig } : {}),
@@ -635,16 +418,6 @@ export default function NewChatPage() {
                       errorDisplay = parsed.userMessage;
                       if (parsed.actionHint) errorDisplay += `\n\n**What to do:** ${parsed.actionHint}`;
                       if (parsed.details) errorDisplay += `\n\nDetails: ${parsed.details}`;
-                      // Add diagnostic guidance for provider/auth related errors
-                      const diagCategories = new Set([
-                        'AUTH_REJECTED', 'AUTH_FORBIDDEN', 'AUTH_STYLE_MISMATCH',
-                        'NO_CREDENTIALS', 'PROVIDER_NOT_APPLIED', 'MODEL_NOT_AVAILABLE',
-                        'NETWORK_UNREACHABLE', 'ENDPOINT_NOT_FOUND', 'PROCESS_CRASH',
-                        'CLI_NOT_FOUND', 'UNSUPPORTED_FEATURE',
-                      ]);
-                      if (diagCategories.has(parsed.category)) {
-                        errorDisplay += '\n\n💡 [Run Provider Diagnostics](/settings#providers) to troubleshoot, or check the [Provider Setup Guide](https://www.codepilot.sh/docs/providers).';
-                      }
                     } else {
                       errorDisplay = event.data;
                     }
@@ -702,7 +475,7 @@ export default function NewChatPage() {
         abortControllerRef.current = null;
       }
     },
-    [isStreaming, router, workingDir, mode, currentModel, currentProviderId, permissionProfile, selectedEffort, thinkingMode, context1m, setPendingApprovalSessionId, t, hasProvider, modelReady]
+    [isStreaming, router, workingDir, mode, currentModel, permissionProfile, selectedEffort, thinkingMode, context1m, setPendingApprovalSessionId, t]
   );
 
   const handleCommand = useCallback((command: string) => {
@@ -741,10 +514,9 @@ export default function NewChatPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {messages.length === 0 && !isStreaming && (!workingDir.trim() || !hasProvider) ? (
+      {messages.length === 0 && !isStreaming && !workingDir.trim() ? (
         <ChatEmptyState
           hasDirectory={!!workingDir.trim()}
-          hasProvider={hasProvider}
           onSelectFolder={handleSelectFolder}
           recentProjects={recentProjects}
           onSelectProject={handleSelectProject}
@@ -755,13 +527,11 @@ export default function NewChatPage() {
               fetch(`/api/workspace/session`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: 'checkin' }),
+                body: JSON.stringify({}),
               })
                 .then(r => r.json())
                 .then(data => router.push(`/chat/${data.session.id}`))
                 .catch(() => {});
-            } else if (assistantWorkspacePath) {
-              setShowWizard(true);
             } else {
               router.push('/settings#assistant');
             }
@@ -800,17 +570,9 @@ export default function NewChatPage() {
         onSend={sendFirstMessage}
         onCommand={handleCommand}
         onStop={stopStreaming}
-        disabled={!modelReady}
         isStreaming={isStreaming}
         modelName={currentModel}
-        onModelChange={setCurrentModel}
-        providerId={currentProviderId}
-        onProviderModelChange={(pid, model) => {
-          setCurrentProviderId(pid);
-          setCurrentModel(model);
-          localStorage.setItem('codepilot:last-provider-id', pid);
-          localStorage.setItem('codepilot:last-model', model);
-        }}
+        onModelChange={handleModelChange}
         workingDirectory={workingDir}
         effort={selectedEffort}
         onEffortChange={setSelectedEffort}
@@ -830,16 +592,6 @@ export default function NewChatPage() {
         onOpenChange={setFolderPickerOpen}
         onSelect={handleFolderPickerSelect}
       />
-      {showWizard && assistantWorkspacePath && (
-        <OnboardingWizard
-          workspacePath={assistantWorkspacePath}
-          onComplete={(session) => {
-            setShowWizard(false);
-            setAssistantConfigured(true);
-            router.push(`/chat/${session.id}`);
-          }}
-        />
-      )}
     </div>
   );
 }

@@ -154,7 +154,7 @@ export function McpServerList({ servers, onEdit, onDelete, onToggleEnabled, runt
                     </Badge>
                   ) : (
                     <Badge variant="secondary" className="text-xs shrink-0">
-                      {t('provider.configured')}
+                      {t('mcp.serverConfigured')}
                     </Badge>
                   )}
                 </div>

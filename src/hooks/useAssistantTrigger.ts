@@ -74,7 +74,6 @@ interface UseAssistantTriggerOpts {
   isStreaming: boolean;
   mode: string;
   currentModel: string;
-  currentProviderId: string;
   initialMessages: Message[];
   handleModeChange: (mode: string) => void;
   buildThinkingConfig: () => { type: string } | undefined;
@@ -88,7 +87,6 @@ export function useAssistantTrigger({
   isStreaming,
   mode,
   currentModel,
-  currentProviderId,
   initialMessages,
   handleModeChange,
   buildThinkingConfig,
@@ -164,17 +162,12 @@ export function useAssistantTrigger({
       }
       if (state.hookTriggeredSessionId === sessionId && initialMessages.length > 0) return;
 
-      const needsOnboarding = !state.onboardingComplete;
-
-      // Onboarding is now handled by the frontend Wizard component (OnboardingWizard.tsx).
-      if (needsOnboarding) return;
-
       // Auto-trigger for:
       // 1. Buddy welcome: no buddy + empty session → adoption prompt (takes priority)
       // 2. Heartbeat: server says overdue + has buddy + empty session → full HEARTBEAT.md check
       // Buddy welcome takes priority: heartbeat defers until buddy exists.
       // Once buddy is hatched and user opens a new empty session, heartbeat fires.
-      const needsBuddyWelcome = state.onboardingComplete && !state.buddy && initialMessages.length === 0;
+      const needsBuddyWelcome = !state.buddy && initialMessages.length === 0;
       // Only trigger heartbeat when buddy exists — avoids collision with buddy-welcome
       const needsHeartbeat = !!data.needsHeartbeat && !!state.buddy && initialMessages.length === 0;
 
@@ -230,7 +223,6 @@ export function useAssistantTrigger({
         content: triggerMsg,
         mode,
         model: currentModel,
-        providerId: currentProviderId,
         autoTrigger: true,
         thinking: buildThinkingConfig(),
         onModeChanged: (sdkMode) => {
@@ -248,7 +240,7 @@ export function useAssistantTrigger({
     } catch (e) {
       console.error('[useAssistantTrigger] Assistant auto-trigger failed:', e);
     }
-  }, [sessionId, workingDirectory, isStreaming, mode, currentModel, currentProviderId, handleModeChange, buildThinkingConfig, initialMessages, sendMessageRef, initMetaRef]);
+  }, [sessionId, workingDirectory, isStreaming, mode, currentModel, handleModeChange, buildThinkingConfig, initialMessages, sendMessageRef, initMetaRef]);
 
   // Fire with a small delay to let the session fully initialize
   useEffect(() => {

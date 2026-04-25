@@ -68,7 +68,7 @@ src/lib/constants/          → 纯数据常量，不引用 UI 层
 |------|---------|---------|-------------|
 | MessageInput | 1,659 | 444 | `MessageInputParts`, `SlashCommandPopover`, hooks: `useChatCommands`, `usePopoverState`, `useSlashCommands`, `useCliToolsFetch`, `useCommandBadge`, libs: `message-input-logic`, `file-utils` |
 | ChatView | ~850 | 419 | `useStreamSubscription`, `useAssistantTrigger` |
-| ProviderManager | 1,081 | ~406 | `provider-presets`, `PresetConnectDialog`, `useProviderModels` |
+| ~~ProviderManager~~ | ~~1,081~~ | — | 2026-04-25 随 provider 子系统整体下线，相关拆分文件（`provider-presets`/`PresetConnectDialog`/`useProviderModels`）全部删除 |
 | AppShell | 527 | 470 | `useUpdateChecker` |
 | AssistantWorkspaceSection | 908 | 499 | `WorkspaceTabPanels`, `WorkspaceConfirmDialogs`, `WorkspaceStatusCards`, `workspace-types` |
 | ChatListPanel | 677 | 484 | `SessionListItem`, `ProjectGroupHeader`, `chat-list-utils` |
@@ -92,8 +92,8 @@ src/lib/constants/          → 纯数据常量，不引用 UI 层
 - `src/components/layout/SessionListItem.tsx`
 - `src/components/layout/ProjectGroupHeader.tsx`
 - `src/components/layout/chat-list-utils.ts`
-- `src/components/settings/provider-presets.tsx`
-- `src/components/settings/PresetConnectDialog.tsx`
+- ~~`src/components/settings/provider-presets.tsx`~~（2026-04-25 删除）
+- ~~`src/components/settings/PresetConnectDialog.tsx`~~（2026-04-25 删除）
 - `src/components/settings/WorkspaceTabPanels.tsx`
 - `src/components/settings/WorkspaceConfirmDialogs.tsx`
 - `src/components/settings/WorkspaceStatusCards.tsx`
@@ -105,7 +105,7 @@ src/lib/constants/          → 纯数据常量，不引用 UI 层
 - `src/hooks/useCliToolsFetch.ts`
 - `src/hooks/useCommandBadge.ts`
 - `src/hooks/usePopoverState.ts`
-- `src/hooks/useProviderModels.ts`
+- ~~`src/hooks/useProviderModels.ts`~~（2026-04-25 删除）
 - `src/hooks/useSlashCommands.ts`
 - `src/hooks/useStreamSubscription.ts`
 - `src/hooks/useUpdateChecker.ts`

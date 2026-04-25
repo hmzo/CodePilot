@@ -57,7 +57,6 @@ export interface StartStreamParams {
   content: string;
   mode: string;
   model: string;
-  providerId: string;
   files?: FileAttachment[];
   systemPromptAppend?: string;
   pendingImageNotices?: string[];
@@ -292,7 +291,6 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
         content: effectiveContent,
         mode: params.mode,
         model: params.model,
-        provider_id: params.providerId,
         ...(params.files && params.files.length > 0 ? { files: params.files } : {}),
         ...(params.systemPromptAppend ? { systemPromptAppend: params.systemPromptAppend } : {}),
         ...(params.autoTrigger ? { autoTrigger: true } : {}),
@@ -426,7 +424,6 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
       },
       onTaskUpdate: () => {
         markActive();
-        window.dispatchEvent(new CustomEvent('tasks-updated'));
       },
       onRewindPoint: (sdkUserMessageId) => {
         markActive();

@@ -1,7 +1,7 @@
 <img src="docs/icon-readme.png" width="32" height="32" alt="CodePilot" style="vertical-align: middle; margin-right: 8px;" /> CodePilot
 ===
 
-**A multi-model AI agent desktop client** -- connect any AI provider, extend with MCP & skills, control from your phone, and let your assistant learn your workflow.
+**A desktop GUI for Claude Code** -- runs on top of your existing `~/.claude` configuration, extends with MCP & skills, controls from your phone, and lets your assistant learn your workflow.
 
 [![GitHub release](https://img.shields.io/github/v/release/op7418/CodePilot)](https://github.com/op7418/CodePilot/releases)
 [![Downloads](https://img.shields.io/github/downloads/op7418/CodePilot/total)](https://github.com/op7418/CodePilot/releases)
@@ -33,36 +33,28 @@ Or visit the [Releases](https://github.com/op7418/CodePilot/releases) page for a
 
 ## Why CodePilot
 
-### Multi-provider, one interface
+### A desktop GUI for `claude`
 
-Connect to **17+ AI providers** out of the box. Switch providers and models mid-conversation without losing context.
+CodePilot is a Claude Code companion. All credentials, base URLs, and default models come from your existing `~/.claude/settings.json` (or your `claude` login session). Configure once via the Claude Code CLI, and CodePilot picks it up automatically — no separate provider setup inside the app.
 
-| Category | Providers |
-|---|---|
-| Direct API | Anthropic, OpenRouter |
-| Cloud platforms | AWS Bedrock, Google Vertex AI |
-| Chinese AI providers | Zhipu GLM (CN/Global), Kimi, Moonshot, MiniMax (CN/Global), Volcengine Ark (Doubao), Xiaomi MiMo, Aliyun Bailian (Qwen) |
-| Local & self-hosted | Ollama, LiteLLM |
-| Custom | Any Anthropic-compatible or OpenAI-compatible endpoint |
-| Media | Google Gemini (image generation) |
+The model selector lets you switch between official Anthropic models (Sonnet / Opus / Haiku) mid-conversation; everything else is delegated to your local Claude Code config.
 
 ### Beyond coding — a full AI agent
 
 CodePilot started as a coding tool but has grown into a **general-purpose AI agent desktop**:
 
-- **Assistant Workspace** — Persona files, persistent memory, onboarding flows, and daily check-ins. Your assistant learns your preferences and adapts over time.
+- **Assistant Workspace** — Persona files, persistent memory, and progressive onboarding driven entirely by Claude. Your assistant learns your preferences and adapts over time.
 - **Generative UI** — AI can create interactive dashboards, charts, and visual widgets rendered live in-app.
 - **Remote Bridge** — Connect to Telegram, Feishu, Discord, QQ, and WeChat. Send messages from your phone, get responses on your desktop.
 - **MCP + Skills** — Add MCP servers (stdio / sse / http) with runtime monitoring. Define reusable skills or install from the skills.sh marketplace.
 - **Media Studio** — AI image generation with batch tasks, gallery, and tagging.
-- **Task Scheduler** — Schedule recurring tasks with cron expressions or intervals.
 
 ### Built for daily use
 
 - Pause, resume, and **rewind sessions to any checkpoint**
 - **Split-screen** dual sessions side by side
 - Track **token usage and costs** with daily charts
-- Import Claude Code CLI session history
+- Reads your existing Claude Code CLI session history
 - Dark / Light theme toggle
 - English + Chinese interface
 
@@ -72,12 +64,11 @@ CodePilot started as a coding tool but has grown into a **general-purpose AI age
 
 ### Path A: Download a release (most users)
 
-1. Download the installer for your platform from the [Download](#download) section above
-2. Launch CodePilot
-3. **Configure a Provider** in **Settings > Providers** — add your API key for any supported provider
-4. Start a conversation
-
-> **Note:** Installing the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview) (`npm install -g @anthropic-ai/claude-code`) unlocks additional capabilities like direct file editing, terminal commands, and git operations. It is recommended but not required for basic chat.
+1. Install the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview): `npm install -g @anthropic-ai/claude-code`
+2. Run `claude` once and complete login (or write your `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` manually)
+3. Download the CodePilot installer for your platform from the [Download](#download) section above
+4. Launch CodePilot — credentials are picked up automatically from `~/.claude`
+5. Pick a model in the chat composer and start a conversation
 
 ### Path B: Build from source (developers)
 
@@ -107,7 +98,7 @@ npm run electron:dev     # full desktop app
 | Reasoning effort | Low / Medium / High / Max + Thinking mode |
 | Permission control | Default / Full Access, per-action approval |
 | Session control | Pause, resume, rewind to checkpoint, archive |
-| Model switching | Change model mid-conversation |
+| Model switching | Switch between Claude Sonnet / Opus / Haiku mid-conversation |
 | Split screen | Side-by-side dual sessions |
 | Attachments | Files and images with multimodal vision support |
 | Slash commands | /help /clear /cost /compact /doctor /review and more |
@@ -116,23 +107,22 @@ npm run electron:dev     # full desktop app
 
 | Capability | Details |
 |---|---|
-| Providers | 17+ providers: Anthropic, OpenRouter, Bedrock, Vertex, Zhipu GLM, Kimi, Moonshot, MiniMax, Volcengine, MiMo, Bailian, Ollama, LiteLLM, custom endpoints |
+| Configuration | Reads `~/.claude/settings.json` directly — no separate provider setup |
 | MCP servers | stdio / sse / http, runtime status monitoring |
 | Skills | Custom / project / global skills, skills.sh marketplace |
 | Bridge | Telegram / Feishu / Discord / QQ / WeChat remote control |
-| CLI import | Import Claude Code CLI .jsonl session history |
+| CLI integration | Reads Claude Code CLI .jsonl session history |
 | Image generation | Gemini image gen, batch tasks, gallery |
 
 ### Data & Workspace
 
 | Capability | Details |
 |---|---|
-| Assistant Workspace | Persona files (soul.md, user.md, claude.md, memory.md), onboarding, daily check-ins, persistent memory |
+| Assistant Workspace | Persona files (soul.md, user.md, claude.md, memory.md), persistent memory |
 | Generative UI | AI-created interactive dashboards and visual widgets |
 | File browser | Project file tree with syntax-highlighted preview |
 | Git panel | Status, branches, commits, worktree management |
 | Usage analytics | Token counts, cost estimates, daily usage charts |
-| Task scheduler | Cron-based and interval scheduling with persistence |
 | Local storage | SQLite (WAL mode), all data stays on your machine |
 | i18n | English + Chinese |
 | Themes | Dark / Light, one-click toggle |
@@ -141,11 +131,10 @@ npm run electron:dev     # full desktop app
 
 ## First Launch
 
-1. **Configure a Provider** — Go to **Settings > Providers** and add credentials for the provider you want to use. CodePilot includes presets for all major providers — just pick one and enter your API key.
-2. **Create a conversation** — Pick a working directory, select a mode (Code / Plan / Ask), and choose a model.
-3. **Set up Assistant Workspace** (optional) — Go to **Settings > Assistant**, choose a workspace directory, and enable Onboarding. CodePilot creates `soul.md`, `user.md`, `claude.md`, and `memory.md` at the workspace root.
+1. **Make sure `~/.claude` is configured** — install the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`) and either run `claude` once to log in, or write `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` manually.
+2. **Create a conversation** — Pick a working directory, select a mode (Code / Plan / Ask), and pick a model in the composer.
+3. **Set up Assistant Workspace** (optional) — Go to **Settings > Assistant**, choose a workspace directory. CodePilot creates `soul.md`, `user.md`, `claude.md`, and `memory.md` at the workspace root.
 4. **Add MCP servers** (optional) — Go to the **MCP** page in the sidebar to add and manage MCP servers. Custom skills are managed on the separate **Skills** page.
-5. **Install Claude Code CLI** (optional) — For advanced features like file editing and terminal commands, install the CLI: `npm install -g @anthropic-ai/claude-code`
 
 ---
 
@@ -182,15 +171,14 @@ xattr -cr /Applications/CodePilot.app
 
 **Getting started:**
 - [Quick Start](#quick-start) -- Download or build from source
-- [First Launch](#first-launch) -- Provider setup, workspace configuration
+- [First Launch](#first-launch) -- Claude Code CLI check, workspace configuration
 - [Installation Guide](https://www.codepilot.sh/docs/installation) -- Detailed setup instructions
 
 **User guides:**
-- [Providers](https://www.codepilot.sh/docs/providers) -- Configuring AI providers and custom endpoints
 - [MCP Servers](https://www.codepilot.sh/docs/mcp) -- Adding and managing Model Context Protocol servers
 - [Skills](https://www.codepilot.sh/docs/skills) -- Custom skills, project skills, and the skills.sh marketplace
 - [Bridge](https://www.codepilot.sh/docs/bridge) -- Remote control via Telegram, Feishu, Discord, QQ, WeChat
-- [Assistant Workspace](https://www.codepilot.sh/docs/assistant-workspace) -- Persona files, onboarding, memory, daily check-ins
+- [Assistant Workspace](https://www.codepilot.sh/docs/assistant-workspace) -- Persona files, memory
 - [FAQ](https://www.codepilot.sh/docs/faq) -- Common issues and solutions
 
 **Developer docs:**
@@ -205,13 +193,13 @@ xattr -cr /Applications/CodePilot.app
 <details>
 <summary>Do I need the Claude Code CLI?</summary>
 
-No. You can use CodePilot with any supported provider (OpenRouter, Zhipu GLM, Volcengine, Ollama, etc.) without the Claude Code CLI. The CLI is only needed if you want Claude to directly edit files, run terminal commands, or use git operations on your machine. For chat and assistant features, just configure a provider and start a conversation.
+Yes. CodePilot is a GUI on top of `claude`; it relies on `~/.claude/settings.json` (or your `claude` login session) for credentials, base URL, and default model. Install the CLI with `npm install -g @anthropic-ai/claude-code` and either run `claude` once or write `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` into the settings file manually before launching CodePilot.
 </details>
 
 <details>
-<summary>Configured a Provider but no models appear</summary>
+<summary>Can I use a non-Anthropic provider (OpenRouter, Zhipu, etc.)?</summary>
 
-Verify the API key is valid and the endpoint is reachable. Some providers (Bedrock, Vertex) require additional environment variables or IAM configuration beyond the API key. Use the built-in diagnostics (**Settings > Providers > Run Diagnostics**) to check connectivity.
+Yes — but configure it through Claude Code itself. Set `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` in `~/.claude/settings.json` to point at your gateway (any Anthropic-compatible endpoint works). CodePilot just defers to whatever the SDK reads from there.
 </details>
 
 <details>

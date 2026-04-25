@@ -4,20 +4,18 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { WelcomeCard } from './WelcomeCard';
 import { ClaudeCodeCard } from './ClaudeCodeCard';
-import { ProviderCard } from './ProviderCard';
 import { ProjectDirCard } from './ProjectDirCard';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { SetupCardStatus } from '@/types';
 
 interface SetupCenterProps {
   onClose: () => void;
-  initialCard?: 'claude' | 'provider' | 'project';
+  initialCard?: 'claude' | 'project';
 }
 
 export function SetupCenter({ onClose, initialCard }: SetupCenterProps) {
   const { t } = useTranslation();
   const [claudeStatus, setClaudeStatus] = useState<SetupCardStatus>('not-configured');
-  const [providerStatus, setProviderStatus] = useState<SetupCardStatus>('not-configured');
   const [projectStatus, setProjectStatus] = useState<SetupCardStatus>('not-configured');
   const [defaultProject, setDefaultProject] = useState<string | undefined>();
   // Track the initial completedCount from the server so we only auto-close
@@ -31,11 +29,10 @@ export function SetupCenter({ onClose, initialCard }: SetupCenterProps) {
       .then(data => {
         if (data) {
           setClaudeStatus(data.claude);
-          setProviderStatus(data.provider);
           setProjectStatus(data.project);
           if (data.defaultProject) setDefaultProject(data.defaultProject);
           // Record how many were already done when we opened
-          const initial = [data.claude, data.provider, data.project]
+          const initial = [data.claude, data.project]
             .filter((s: string) => s === 'completed' || s === 'skipped').length;
           initialCompletedCountRef.current = initial;
         }
@@ -43,15 +40,15 @@ export function SetupCenter({ onClose, initialCard }: SetupCenterProps) {
       .catch(() => {});
   }, []);
 
-  const completedCount = [claudeStatus, providerStatus, projectStatus]
+  const completedCount = [claudeStatus, projectStatus]
     .filter(s => s === 'completed' || s === 'skipped').length;
 
   // Auto-close when all done — but only if user made progress during this session
   useEffect(() => {
     if (
-      completedCount === 3 &&
+      completedCount === 2 &&
       initialCompletedCountRef.current !== null &&
-      initialCompletedCountRef.current < 3
+      initialCompletedCountRef.current < 2
     ) {
       // Mark as completed
       fetch('/api/setup', {
@@ -112,13 +109,6 @@ export function SetupCenter({ onClose, initialCard }: SetupCenterProps) {
             <ClaudeCodeCard
               status={claudeStatus}
               onStatusChange={setClaudeStatus}
-            />
-          </div>
-
-          <div id="setup-card-provider">
-            <ProviderCard
-              status={providerStatus}
-              onStatusChange={setProviderStatus}
             />
           </div>
 

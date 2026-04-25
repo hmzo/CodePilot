@@ -26,13 +26,13 @@ import {
   getRewindPoints,
   respondToPermission,
 } from '@/lib/stream-session-manager';
+import { DEFAULT_MODEL_ID, SELECTED_MODEL_STORAGE_KEY } from '@/lib/anthropic-models';
 
 interface ChatViewProps {
   sessionId: string;
   initialMessages?: Message[];
   initialHasMore?: boolean;
   modelName?: string;
-  providerId?: string;
   initialPermissionProfile?: 'default' | 'full_access';
   initialMode?: 'code' | 'plan';
   initialHasSummary?: boolean;
@@ -41,7 +41,7 @@ interface ChatViewProps {
 /** Maximum messages kept in React state. Older messages are trimmed and reloaded on scroll. */
 const MAX_MESSAGES_IN_MEMORY = 300;
 
-export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, providerId, initialPermissionProfile, initialMode, initialHasSummary }: ChatViewProps) {
+export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, initialPermissionProfile, initialMode, initialHasSummary }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory, setPendingApprovalSessionId, setDashboardPanelOpen, setFileTreeOpen, setIsAssistantWorkspace } = usePanel();
   const { t } = useTranslation();
   const router = useRouter();
@@ -104,32 +104,16 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
     });
   }, []);
   const [mode, setMode] = useState<string>(initialMode || 'code');
-  const [currentModel, setCurrentModel] = useState(() => modelName || (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') : null) || 'sonnet');
-  const [currentProviderId, setCurrentProviderId] = useState(() => providerId || (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-provider-id') : null) || '');
+  const [currentModel, setCurrentModel] = useState(() =>
+    modelName || (typeof window !== 'undefined' ? localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) : null) || DEFAULT_MODEL_ID,
+  );
   const [selectedEffort, setSelectedEffort] = useState<string | undefined>(undefined);
-  const [thinkingMode, setThinkingMode] = useState<string>('adaptive');
-  const [context1m, setContext1m] = useState(false);
+  const [thinkingMode] = useState<string>('adaptive');
+  const [context1m] = useState(false);
   const [hasSummary, setHasSummary] = useState(initialHasSummary || false);
 
-  // Sync model/provider when session data loads
+  // Sync model when session data loads
   useEffect(() => { if (modelName) setCurrentModel(modelName); }, [modelName]);
-  useEffect(() => { if (providerId) setCurrentProviderId(providerId); }, [providerId]);
-
-  // Fetch provider-specific options (with abort to prevent stale responses on fast switch)
-  useEffect(() => {
-    const pid = currentProviderId || 'env';
-    const controller = new AbortController();
-    fetch(`/api/providers/options?providerId=${encodeURIComponent(pid)}`, { signal: controller.signal })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!controller.signal.aborted) {
-          setThinkingMode(data?.options?.thinking_mode || 'adaptive');
-          setContext1m(!!data?.options?.context_1m);
-        }
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [currentProviderId]);
   useEffect(() => { if (initialPermissionProfile) setPermissionProfile(initialPermissionProfile); }, [initialPermissionProfile]);
 
   // Restore session-scoped last-generated images from sessionStorage
@@ -176,13 +160,15 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
     }
   }, [sessionId]);
 
-  const handleProviderModelChange = useCallback((newProviderId: string, model: string) => {
-    setCurrentProviderId(newProviderId);
+  const handleModelChange = useCallback((model: string) => {
     setCurrentModel(model);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, model);
+    }
     fetch(`/api/chat/sessions/${sessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, provider_id: newProviderId }),
+      body: JSON.stringify({ model }),
     }).catch(() => {});
   }, [sessionId]);
 
@@ -250,7 +236,6 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
     isStreaming,
     mode,
     currentModel,
-    currentProviderId,
     initialMessages,
     handleModeChange,
     buildThinkingConfig,
@@ -325,12 +310,11 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
 
   const handleOpenNewAssistant = useCallback(async () => {
     try {
-      const model = typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') || '' : '';
-      const provider_id = typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-provider-id') || '' : '';
+      const model = typeof window !== 'undefined' ? localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) || '' : '';
       const res = await fetch('/api/workspace/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'checkin', model, provider_id }),
+        body: JSON.stringify({ model }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -413,7 +397,6 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
         content,
         mode,
         model: currentModel,
-        providerId: currentProviderId,
         files,
         systemPromptAppend,
         pendingImageNotices: notices,
@@ -438,7 +421,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
       // happen on stream completion via onStreamCompleted — at that point both
       // user and assistant messages are persisted, so no race is possible.
     },
-    [sessionId, isStreaming, mode, currentModel, currentProviderId, selectedEffort, context1m, buildThinkingConfig, handleModeChange]
+    [sessionId, isStreaming, mode, currentModel, selectedEffort, context1m, buildThinkingConfig, handleModeChange]
   );
 
   sendMessageRef.current = sendMessage;
@@ -595,16 +578,12 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
         isStreaming={isStreaming}
         sessionId={sessionId}
         modelName={currentModel}
-        onModelChange={setCurrentModel}
-        providerId={currentProviderId}
-        onProviderModelChange={handleProviderModelChange}
+        onModelChange={handleModelChange}
         workingDirectory={workingDirectory}
         onAssistantTrigger={checkAssistantTrigger}
         effort={selectedEffort}
         onEffortChange={setSelectedEffort}
         sdkInitMeta={initMetaRef.current}
-        isAssistantProject={isAssistantProject}
-        hasMessages={messages.length > 0}
       />
       <ChatComposerActionBar
         left={<><ModeIndicator mode={mode} onModeChange={handleModeChange} disabled={isStreaming} /><ImageGenToggle /></>}

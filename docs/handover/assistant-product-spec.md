@@ -1,8 +1,20 @@
 # CodePilot 个人助理 — 产品规格文档
 
 > 版本：v0.44.0
-> 上次更新：2026-04-01
+> 上次更新：2026-04-25
 > 技术交接：[docs/handover/memory-system-v3.md](memory-system-v3.md)
+>
+> **2026-04-25 重要变更**：随 provider 子系统下线（[remove-provider-system.md](../exec-plans/active/remove-provider-system.md)），本规格文档中以下功能已废弃：
+> - **Onboarding 流程**（13 题问卷 / 对话式 bootstrap） — 整套删除，新会话直接进 chat。
+> - **Check-in / 心跳问询** — UI 和 prompt 触发器删除，但 `heartbeat.md` 文件本身保留供模型自主读取。
+> - **Quick Actions** — 组件和 API 删除，模型现在通过 Claude Code 内置工具直接操作工作区文件。
+> - **Memory Search MCP**（`codepilot_memory_get` / `codepilot_memory_search`） — 删除，由 Claude Code 自带 `Read`/`Grep` 直接读 `memory.md` 替代。
+> - **Task Scheduler MCP**（`codepilot_schedule_task` / `codepilot_list_tasks` / `codepilot_cancel_task`） — 删除，`tasks` / `scheduled_tasks` 表 DROP。
+> - **Auto Memory Extraction**（`memory-extractor.ts`） — 删除。
+>
+> 保留：助理工作区目录（`soul.md` / `user.md` / `claude.md` / `memory.md` / `heartbeat.md`）、buddy 系统、`codepilot-notify` 通用通知 MCP、文件树展示。
+> 现在的产品定位精简为："Claude Code 的桌面 GUI 客户端 + 助理工作区文件结构"，所有 LLM 行为完全交给 Claude Code 自身（包括读写记忆文件、判断何时更新 soul/user/claude）。
+> 下文余下内容反映 v0.44.0 的设计快照，作为历史决策保留。
 
 ---
 

@@ -9,7 +9,6 @@ import { EGG_IMAGE_URL } from '@/lib/buddy';
 
 interface ChatEmptyStateProps {
   hasDirectory: boolean;
-  hasProvider: boolean;
   onSelectFolder: () => void;
   recentProjects?: string[];
   onSelectProject?: (path: string) => void;
@@ -19,7 +18,6 @@ interface ChatEmptyStateProps {
 
 export function ChatEmptyState({
   hasDirectory,
-  hasProvider,
   onSelectFolder,
   recentProjects,
   onSelectProject,
@@ -28,7 +26,7 @@ export function ChatEmptyState({
 }: ChatEmptyStateProps) {
   const { t } = useTranslation();
 
-  if (hasDirectory && hasProvider) {
+  if (hasDirectory) {
     return (
       <div className="flex flex-1 items-center justify-center p-8">
         <p className="text-sm text-muted-foreground">{t('chat.empty.ready')}</p>
@@ -87,20 +85,6 @@ export function ChatEmptyState({
         <p className="text-xs text-center text-muted-foreground px-4">
           {t('chat.empty.explanation')}
         </p>
-
-        {/* Provider setup prompt */}
-        {!hasProvider && (
-          <div className="space-y-2 text-center">
-            <p className="text-sm font-medium">{t('chat.empty.noProvider')}</p>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => window.dispatchEvent(new CustomEvent('open-setup-center', { detail: { initialCard: 'provider' } }))}
-            >
-              {t('chat.empty.openSetup')}
-            </Button>
-          </div>
-        )}
 
         {/* Recent projects */}
         {recentProjects && recentProjects.length > 0 && onSelectProject && (

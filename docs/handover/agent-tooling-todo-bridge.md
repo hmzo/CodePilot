@@ -1,5 +1,14 @@
 # Agent Tooling & TodoWrite Bridge
 
+> **2026-04-25 重要变更**：随 provider 子系统下线（[remove-provider-system.md](../exec-plans/active/remove-provider-system.md)），本文档描述的 "TodoWrite → `tasks` 表 → `TaskList` UI" 整条链路已废弃：
+> - `tasks` / `scheduled_tasks` / `task_run_logs` 表 DROP
+> - `syncSdkTasks()` / `mapStatus()` 等同步函数删除
+> - `GET /api/tasks/*` 路由全部删除
+> - `TaskList` 组件删除
+> - `task_update` SSE 事件不再被消费
+>
+> SDK 的 TodoWrite 工具调用本身仍然会被 PostToolUse hook 接收，但不再持久化到 DB；前端通过 `tool_use` / `tool_result` SSE 事件直接渲染 todo 列表。下文余下内容仅作为历史架构参考保留。
+
 ## Architecture Overview
 
 ```

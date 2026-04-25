@@ -43,7 +43,6 @@ export async function POST(request: NextRequest) {
       body.system_prompt,
       body.working_directory,
       body.mode,
-      body.provider_id,
       body.permission_profile,
     );
     const response: SessionResponse = { session };

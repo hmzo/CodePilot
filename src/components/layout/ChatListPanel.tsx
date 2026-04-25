@@ -48,6 +48,7 @@ import {
   saveCollapsedProjects,
   COLLAPSED_INITIALIZED_KEY,
 } from "./chat-list-utils";
+import { SELECTED_MODEL_STORAGE_KEY } from "@/lib/anthropic-models";
 import type { ChatSession } from "@/types";
 
 interface ChatListPanelProps {
@@ -97,20 +98,18 @@ export function ChatListPanel({ open, width, hasUpdate, readyToInstall }: ChatLi
       .catch(() => {});
   }, [sessions.length]);
 
-  /** Read current model + provider_id from localStorage for new session creation */
-  const getCurrentModelAndProvider = useCallback(() => {
-    const model = typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') || '' : '';
-    const provider_id = typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-provider-id') || '' : '';
-    return { model, provider_id };
+  /** Read current model from localStorage for new session creation */
+  const getCurrentModel = useCallback(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) || '' : '';
   }, []);
 
   const handleFolderSelect = useCallback(async (path: string) => {
     try {
-      const { model, provider_id } = getCurrentModelAndProvider();
+      const model = getCurrentModel();
       const res = await fetch("/api/chat/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ working_directory: path, model, provider_id }),
+        body: JSON.stringify({ working_directory: path, model }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -120,7 +119,7 @@ export function ChatListPanel({ open, width, hasUpdate, readyToInstall }: ChatLi
     } catch {
       // Silently fail
     }
-  }, [router, getCurrentModelAndProvider]);
+  }, [router, getCurrentModel]);
 
   const openFolderPicker = useCallback(async (defaultPath?: string) => {
     if (isElectron) {
@@ -190,11 +189,11 @@ export function ChatListPanel({ open, width, hasUpdate, readyToInstall }: ChatLi
         }
       }
 
-      const { model, provider_id } = getCurrentModelAndProvider();
+      const model = getCurrentModel();
       const res = await fetch("/api/chat/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ working_directory: lastDir, model, provider_id }),
+        body: JSON.stringify({ working_directory: lastDir, model }),
       });
       if (!res.ok) {
         // Backend rejected it (e.g. INVALID_DIRECTORY) — prompt user
@@ -210,7 +209,7 @@ export function ChatListPanel({ open, width, hasUpdate, readyToInstall }: ChatLi
     } finally {
       setCreatingChat(false);
     }
-  }, [router, workingDirectory, openFolderPicker, getCurrentModelAndProvider, t]);
+  }, [router, workingDirectory, openFolderPicker, getCurrentModel, t]);
 
   const toggleProject = useCallback((wd: string) => {
     setCollapsedProjects((prev) => {
@@ -360,11 +359,11 @@ export function ChatListPanel({ open, width, hasUpdate, readyToInstall }: ChatLi
   ) => {
     e.stopPropagation();
     try {
-      const { model, provider_id } = getCurrentModelAndProvider();
+      const model = getCurrentModel();
       const res = await fetch("/api/chat/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ working_directory: workingDirectory, model, provider_id }),
+        body: JSON.stringify({ working_directory: workingDirectory, model }),
       });
       if (res.ok) {
         const data = await res.json();

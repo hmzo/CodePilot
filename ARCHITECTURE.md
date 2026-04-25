@@ -1,6 +1,6 @@
 # ARCHITECTURE.md
 
-CodePilot 是多模型 AI Agent 桌面客户端。Electron 40 做外壳，Next.js 16 (App Router) 做前端和 API 层，better-sqlite3 做本地持久化，通过 Claude Agent SDK 与 AI 服务商交互。
+CodePilot 是 Claude Code 的桌面 GUI 客户端。Electron 40 做外壳，Next.js 16 (App Router) 做前端和 API 层，better-sqlite3 做本地持久化，通过 Claude Agent SDK 直接读取用户主目录下的 `~/.claude` 配置（凭据、base_url、默认模型完全由 Claude Code 设置接管）。
 
 ## 目录结构
 
@@ -36,7 +36,7 @@ src/
 │   ├── claude-session-parser.ts   # 解析 Claude CLI .jsonl 会话
 │   ├── platform.ts         # 平台检测 (macOS/Windows/Linux)
 │   ├── error-classifier.ts # 错误分类（16 类结构化错误）
-│   ├── provider-doctor.ts  # Provider 诊断引擎（5 探针 + 修复动作）
+│   ├── anthropic-models.ts # 硬编码的 Anthropic 模型清单（与官方文档同步）
 │   ├── runtime-log.ts      # console 环形缓冲（200 条，自动脱敏）
 │   └── bridge/             # IM Bridge 子系统（见下方）
 ├── hooks/          # React Hooks (useSSEStream, useImageGen, useTranslation …)
@@ -78,15 +78,13 @@ Telegram/Feishu 消息
 
 ## 数据库（SQLite）
 
-Schema 定义在 `src/lib/db.ts`，12 张表：
+Schema 定义在 `src/lib/db.ts`：
 
 | 表 | 用途 |
 |----|------|
 | `chat_sessions` | 聊天会话元数据 |
 | `messages` | 消息（content 为 JSON 数组） |
 | `settings` | 键值设置 |
-| `tasks` | SDK TodoWrite 任务项 |
-| `api_providers` | API 提供商配置（Anthropic, OpenAI …） |
 | `media_generations` | 生成的图片/媒体 |
 | `media_tags` | 媒体标签 |
 | `media_jobs` | 批量图片生成任务 |
@@ -96,6 +94,8 @@ Schema 定义在 `src/lib/db.ts`，12 张表：
 | `channel_offsets` | Bridge: 轮询偏移量水位线 |
 
 启用 WAL 模式 + 外键约束。数据目录：`~/.codepilot/`。
+
+> 历史遗留：`api_providers` / `provider_models` / `tasks` / `scheduled_tasks` / `task_run_logs` 表已在迁移中 DROP；`chat_sessions.provider_id/provider_name` 列保留为 dead column 不影响功能。
 
 ## Bridge 子系统
 
@@ -164,7 +164,7 @@ Schema 定义在 `src/lib/db.ts`，12 张表：
 | 上下文存储迁移（调研） | `docs/research/context-storage-migration-plan.md` | 数据库迁移详细方案 |
 | 上下文存储迁移（执行） | `docs/exec-plans/active/context-storage-migration.md` | 分阶段进度 + 决策日志 |
 | 技术债务 | `docs/exec-plans/tech-debt-tracker.md` | 已知技术债务清单 |
-| Provider/Error/Doctor | `docs/handover/provider-error-doctor.md` | 错误分类、Provider 生效、Auth 自动、诊断中心 |
+| Provider 系统下线 | `docs/exec-plans/active/remove-provider-system.md` | 删除 provider 子系统、改用 ~/.claude 配置 |
 
 ## 技术栈
 
@@ -174,7 +174,7 @@ Schema 定义在 `src/lib/db.ts`，12 张表：
 | 前端框架 | Next.js 16 (App Router) + React 19 |
 | 样式 | Tailwind CSS 4 + Radix UI |
 | 数据库 | better-sqlite3 (WAL) |
-| AI 集成 | Claude Agent SDK, @ai-sdk/anthropic, @ai-sdk/google, @ai-sdk/openai |
+| AI 集成 | Claude Agent SDK（直接读 ~/.claude 配置） |
 | IM 集成 | Telegram Bot API, 飞书 SDK (@larksuiteoapi/node-sdk) |
 | 代码高亮 | Shiki |
 | Markdown | react-markdown, streamdown, markdown-it |

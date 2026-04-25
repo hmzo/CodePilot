@@ -8,7 +8,6 @@ const BRIDGE_SETTING_KEYS = [
   'bridge_auto_start',
   'bridge_default_work_dir',
   'bridge_default_model',
-  'bridge_default_provider_id',
   'bridge_telegram_stream_enabled',
   'bridge_telegram_stream_interval_ms',
   'bridge_telegram_stream_min_delta_chars',

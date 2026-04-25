@@ -21,7 +21,6 @@ import { captureCapabilities, isCacheFresh, setCachedPlugins } from './agent-sdk
 import { normalizeMessageContent, microCompactMessage } from './message-normalizer';
 import { roughTokenEstimate } from './context-estimator';
 import { getSetting, updateSdkSessionId, createPermissionRequest } from './db';
-import { resolveForClaudeCode, toClaudeCodeEnv } from './provider-resolver';
 import { findClaudeBinary, findGitBash, getExpandedPath, invalidateClaudePathCache } from './platform';
 import { notifyPermissionRequest, notifyGeneric } from './telegram-bot';
 import { classifyError, formatClassifiedError } from './error-classifier';
@@ -238,7 +237,7 @@ function getUploadedFilePaths(files: FileAttachment[], workDir: string): string[
   return paths;
 }
 
-// Message normalization is in message-normalizer.ts (shared with context-compressor.ts).
+// Message normalization is in message-normalizer.ts.
 // Imported dynamically in buildFallbackContext to avoid circular deps at module level.
 
 /**
@@ -312,21 +311,16 @@ function buildFallbackContext(params: {
 
 /**
  * Lightweight text generation via the Claude Code SDK subprocess.
- * Uses the same provider/env resolution as streamClaude but without sessions,
- * MCP, permissions, or conversation history. Suitable for simple tasks like
- * generating tool descriptions.
+ * Reads credentials/base_url/model from the user's `~/.claude` configuration
+ * via SDK `settingSources: ['user', 'project', 'local']`. Suitable for simple
+ * tasks like generating tool descriptions.
  */
 export async function generateTextViaSdk(params: {
-  providerId?: string;
   model?: string;
   system: string;
   prompt: string;
   abortSignal?: AbortSignal;
 }): Promise<string> {
-  const resolved = resolveForClaudeCode(undefined, {
-    providerId: params.providerId,
-  });
-
   const sdkEnv: Record<string, string> = { ...process.env as Record<string, string> };
   if (!sdkEnv.HOME) sdkEnv.HOME = os.homedir();
   if (!sdkEnv.USERPROFILE) sdkEnv.USERPROFILE = os.homedir();
@@ -337,9 +331,6 @@ export async function generateTextViaSdk(params: {
     const gitBashPath = findGitBash();
     if (gitBashPath) sdkEnv.CLAUDE_CODE_GIT_BASH_PATH = gitBashPath;
   }
-
-  const resolvedEnv = toClaudeCodeEnv(sdkEnv, resolved);
-  Object.assign(sdkEnv, resolvedEnv);
 
   const abortController = new AbortController();
   if (params.abortSignal) {
@@ -355,7 +346,7 @@ export async function generateTextViaSdk(params: {
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
     env: sanitizeEnv(sdkEnv),
-    settingSources: resolved.settingSources as Options['settingSources'],
+    settingSources: ['user', 'project', 'local'],
     systemPrompt: params.system,
     maxTurns: 1,
   };
@@ -435,18 +426,6 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
 
   return new ReadableStream<string>({
     async start(controller) {
-      // Flag to prevent infinite PTL retry loops (at most one retry per request)
-      let ptlRetryAttempted = false;
-
-      // Resolve provider via the unified resolver. The caller may pass an explicit
-      // provider (from resolveProvider().provider), or undefined when 'env' mode is
-      // intended. We do NOT fall back to getActiveProvider() here — that's handled
-      // inside resolveForClaudeCode() only when no resolution was attempted at all.
-      const resolved = resolveForClaudeCode(options.provider, {
-        providerId: options.providerId,
-        sessionProviderId: options.sessionProviderId,
-      });
-
       try {
         const resolvedWorkingDirectory = resolveWorkingDirectory([
           { path: workingDirectory, source: 'requested' },
@@ -459,8 +438,9 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         }
 
         // Build env for the Claude Code subprocess.
-        // Start with process.env (includes user shell env from Electron's loadUserShellEnv).
-        // Then overlay any API config the user set in CodePilot settings (optional).
+        // CodePilot does NOT inject ANTHROPIC_* env vars — credentials,
+        // base_url and default model are read from the user's ~/.claude
+        // configuration via SDK settingSources: ['user', 'project', 'local'].
         const sdkEnv: Record<string, string> = { ...process.env as Record<string, string> };
 
         // Ensure HOME/USERPROFILE are set so Claude Code can find ~/.claude/commands/
@@ -483,15 +463,11 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
           }
         }
 
-        // Build env from resolved provider
-        const resolvedEnv = toClaudeCodeEnv(sdkEnv, resolved);
-        // toClaudeCodeEnv returns a full env — merge back into sdkEnv
-        // (preserves HOME, USERPROFILE, PATH, Git Bash detection set above)
-        Object.assign(sdkEnv, resolvedEnv);
-
-        // Warn if no credentials found at all
-        if (!resolved.hasCredentials && !sdkEnv.ANTHROPIC_API_KEY && !sdkEnv.ANTHROPIC_AUTH_TOKEN) {
-          console.warn('[claude-client] No API key found: no active provider, no legacy settings, and no ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN in environment');
+        // Warn if no credentials are present in env or ~/.claude configuration.
+        // We only check env here; the SDK will surface missing-credential errors
+        // when it tries to call the API if ~/.claude is also empty.
+        if (!sdkEnv.ANTHROPIC_API_KEY && !sdkEnv.ANTHROPIC_AUTH_TOKEN) {
+          console.warn('[claude-client] No ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN in env. SDK will fall back to ~/.claude/settings.json or `claude` login state.');
         }
 
 
@@ -507,12 +483,11 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
             ? 'bypassPermissions'
             : ((permissionMode as Options['permissionMode']) || 'acceptEdits'),
           env: sanitizeEnv(sdkEnv),
-          // Load settings so the SDK behaves like the CLI (tool permissions,
-          // CLAUDE.md, etc.). When an active provider is configured in
-          // CodePilot, skip 'user' settings because ~/.claude/settings.json
-          // may contain env overrides (ANTHROPIC_BASE_URL, ANTHROPIC_MODEL,
-          // etc.) that would conflict with the provider's configuration.
-          settingSources: resolved.settingSources as Options['settingSources'],
+          // Load all settings sources so the SDK behaves like the CLI: it can
+          // read ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL
+          // from ~/.claude/settings.json, project-level overrides, and local
+          // overrides. CodePilot does not manage these — the user owns them.
+          settingSources: ['user', 'project', 'local'],
         };
 
         if (skipPermissions) {
@@ -557,22 +532,6 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         // is now automatically loaded by the SDK via settingSources: ['user', 'project', 'local'].
         if (mcpServers && Object.keys(mcpServers).length > 0) {
           queryOptions.mcpServers = toSdkMcpConfig(mcpServers);
-        }
-
-        // Memory MCP: always registered in assistant mode for memory search/retrieval.
-        // Unlike other MCPs which are keyword-gated, memory search is a core assistant capability.
-        {
-          const assistantWorkspacePath = getSetting('assistant_workspace_path');
-          if (assistantWorkspacePath && resolvedWorkingDirectory.path === assistantWorkspacePath) {
-            const { createMemorySearchMcpServer, MEMORY_SEARCH_SYSTEM_PROMPT } = await import('@/lib/memory-search-mcp');
-            queryOptions.mcpServers = {
-              ...(queryOptions.mcpServers || {}),
-              'codepilot-memory': createMemorySearchMcpServer(assistantWorkspacePath),
-            };
-            if (queryOptions.systemPrompt && typeof queryOptions.systemPrompt === 'object' && 'append' in queryOptions.systemPrompt) {
-              queryOptions.systemPrompt.append = (queryOptions.systemPrompt.append || '') + '\n\n' + MEMORY_SEARCH_SYSTEM_PROMPT;
-            }
-          }
         }
 
         // Notification + Schedule MCP: globally available in all contexts
@@ -1026,7 +985,10 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
 
         // Defer capability capture until first assistant response to avoid
         // competing with first-token latency. Skip entirely if cache is fresh.
-        const capProviderId = resolved.provider?.api_key ? resolved.provider.id || 'custom' : 'env';
+        // capProviderId now reflects "claude code via ~/.claude" — a single
+        // capability-cache bucket is enough since CodePilot no longer manages
+        // multiple providers.
+        const capProviderId = 'claude-code';
         let capturePending = !isCacheFresh(capProviderId);
 
         let tokenUsage: TokenUsage | null = null;
@@ -1341,189 +1303,17 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
           code: error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined,
         });
 
-        // Look up preset meta for recovery action URLs
-        const presetForMeta = resolved.provider?.base_url
-          ? (await import('./provider-catalog')).findPresetForLegacy(resolved.provider.base_url, resolved.provider.provider_type, resolved.protocol)
-          : undefined;
-
-        // Classify the error using structured pattern matching
+        // Classify the error using structured pattern matching.
+        // CodePilot no longer manages providers; the SDK reads everything from
+        // ~/.claude, so we don't have provider name/base_url to inject here.
         const classified = classifyError({
           error,
           stderr: stderrContent,
-          providerName: resolved.provider?.name,
-          baseUrl: resolved.provider?.base_url,
           hasImages: files && files.some(f => isImageFile(f.type)),
           thinkingEnabled: !!thinking,
           context1mEnabled: !!context1m,
           effortSet: !!effort,
-          providerMeta: presetForMeta?.meta ? {
-            apiKeyUrl: presetForMeta.meta.apiKeyUrl,
-            docsUrl: presetForMeta.meta.docsUrl,
-            pricingUrl: presetForMeta.meta.pricingUrl,
-          } : undefined,
         });
-
-        // ── Reactive compact: auto-compress and retry on CONTEXT_TOO_LONG ──
-        if (classified.category === 'CONTEXT_TOO_LONG' && !ptlRetryAttempted && conversationHistory && conversationHistory.length > 4) {
-          ptlRetryAttempted = true;
-          try {
-            console.log('[claude-client] CONTEXT_TOO_LONG detected — attempting auto-compress + retry');
-            controller.enqueue(formatSSE({ type: 'status', data: JSON.stringify({ notification: true, message: 'context_compressing_retry' }) }));
-
-            const { compressConversation } = await import('./context-compressor');
-            const { updateSessionSummary: updateSummary } = await import('@/lib/db');
-            const compResult = await compressConversation({
-              sessionId,
-              messages: conversationHistory,
-              existingSummary: options.sessionSummary,
-              providerId: options.providerId || options.sessionProviderId,
-              sessionModel: model,
-            });
-            updateSummary(sessionId, compResult.summary);
-            options.sessionSummary = compResult.summary;
-            // Recalculate fallback budget with new summary size
-            const newSummaryTokens = roughTokenEstimate(compResult.summary);
-            const promptTokens = roughTokenEstimate(prompt);
-            const systemTokens = roughTokenEstimate(systemPrompt || '');
-            // Use a conservative 50% of actual context window for retry
-            const { getContextWindow } = await import('./model-context');
-            const ctxWindow = getContextWindow(model || 'sonnet', { context1m: !!context1m }) || 200000;
-            const retryBudget = Math.max(10000, Math.floor(ctxWindow * 0.5 - systemTokens - newSummaryTokens - promptTokens));
-            console.log(`[claude-client] Compressed ${compResult.messagesCompressed} messages for PTL retry, budget=${retryBudget}`);
-
-            // Clear stale session so retry starts fresh
-            if (sessionId) {
-              try { updateSdkSessionId(sessionId, ''); } catch { /* best effort */ }
-            }
-
-            // Build retry prompt using compressed context with recalculated budget
-            const retryPrompt = buildFallbackContext({
-              prompt,
-              history: conversationHistory,
-              sessionSummary: options.sessionSummary,
-              tokenBudget: retryBudget,
-            });
-
-            // Rebuild minimal query options from closure variables
-            // (queryOptions is scoped to the try block and not accessible here)
-            const retryOptions: Options = {
-              cwd: options.workingDirectory || os.homedir(),
-              abortController,
-              permissionMode: 'bypassPermissions' as Options['permissionMode'],
-              allowDangerouslySkipPermissions: true,
-              env: { ...process.env as Record<string, string> },
-              maxTurns: undefined,
-            };
-            if (model) retryOptions.model = model;
-            if (systemPrompt) {
-              retryOptions.systemPrompt = { type: 'preset', preset: 'claude_code', append: systemPrompt };
-            }
-
-            const retryConversation = query({ prompt: retryPrompt, options: retryOptions });
-
-            // Forward retry stream events (simplified — covers the critical path)
-            for await (const msg of retryConversation) {
-              if (abortController?.signal.aborted) break;
-              switch (msg.type) {
-                case 'assistant': {
-                  const aMsg = msg as SDKAssistantMessage;
-                  for (const block of aMsg.message.content) {
-                    if (block.type === 'tool_use') {
-                      controller.enqueue(formatSSE({ type: 'tool_use', data: JSON.stringify({ id: block.id, name: block.name, input: block.input }) }));
-                    }
-                  }
-                  break;
-                }
-                case 'user': {
-                  const uMsg = msg as { type: 'user'; message: { content: Array<{ type: string; content?: string | Array<Record<string, unknown>>; tool_use_id?: string; is_error?: boolean }> } };
-                  for (const block of uMsg.message.content) {
-                    if (block.type === 'tool_result') {
-                      const retryMedia: MediaBlock[] = [];
-                      let retryContent = '';
-
-                      if (Array.isArray(block.content)) {
-                        // Array-form tool result (external MCP): extract text + image/audio blocks
-                        const textParts: string[] = [];
-                        for (const c of block.content) {
-                          const cb = c as { type: string; text?: string; data?: string; mimeType?: string; media_type?: string };
-                          if (cb.type === 'text' && cb.text) {
-                            textParts.push(cb.text);
-                          } else if ((cb.type === 'image' || cb.type === 'audio') && cb.data) {
-                            retryMedia.push({
-                              type: cb.type === 'audio' ? 'audio' : 'image',
-                              data: cb.data,
-                              mimeType: cb.mimeType || cb.media_type || (cb.type === 'image' ? 'image/png' : 'audio/wav'),
-                            });
-                          }
-                        }
-                        retryContent = textParts.join('\n').slice(0, 2000);
-                      } else if (typeof block.content === 'string') {
-                        retryContent = block.content.slice(0, 2000);
-                      }
-
-                      // Extract __MEDIA_RESULT__ markers from text content
-                      const RETRY_MEDIA_MARKER = '__MEDIA_RESULT__';
-                      const retryMarkerIdx = retryContent.indexOf(RETRY_MEDIA_MARKER);
-                      if (retryMarkerIdx >= 0) {
-                        try {
-                          const mediaJson = retryContent.slice(retryMarkerIdx + RETRY_MEDIA_MARKER.length).trim();
-                          const parsed = JSON.parse(mediaJson) as Array<{ type: string; mimeType: string; localPath: string; mediaId?: string }>;
-                          for (const m of parsed) {
-                            retryMedia.push({
-                              type: (m.type as MediaBlock['type']) || 'image',
-                              mimeType: m.mimeType,
-                              localPath: m.localPath,
-                              mediaId: m.mediaId,
-                            });
-                          }
-                        } catch { /* malformed marker */ }
-                        retryContent = retryContent.slice(0, retryMarkerIdx).trim();
-                      }
-
-                      controller.enqueue(formatSSE({ type: 'tool_result', data: JSON.stringify({
-                        tool_use_id: block.tool_use_id,
-                        content: retryContent,
-                        ...(block.is_error ? { is_error: true } : {}),
-                        ...(retryMedia.length > 0 ? { media: retryMedia } : {}),
-                      }) }));
-                    }
-                  }
-                  break;
-                }
-                case 'stream_event': {
-                  const se = msg as { type: 'stream_event'; event: { type: string; delta?: { text?: string; thinking?: string }; index?: number } };
-                  if (se.event.type === 'content_block_delta') {
-                    if (se.event.delta?.text) {
-                      controller.enqueue(formatSSE({ type: 'text', data: se.event.delta.text }));
-                    }
-                    if (se.event.delta?.thinking) {
-                      controller.enqueue(formatSSE({ type: 'thinking', data: se.event.delta.thinking }));
-                    }
-                  }
-                  break;
-                }
-                case 'result': {
-                  const rMsg = msg as SDKResultMessage;
-                  if ('result' in rMsg) {
-                    const usage = extractTokenUsage(rMsg as SDKResultSuccess);
-                    if (usage) {
-                      controller.enqueue(formatSSE({ type: 'result', data: JSON.stringify(usage) }));
-                    }
-                  }
-                  // Emit compression notification so frontend updates hasSummary
-                  controller.enqueue(formatSSE({ type: 'status', data: JSON.stringify({ notification: true, message: 'context_compressed' }) }));
-                  break;
-                }
-              }
-            }
-            controller.enqueue(formatSSE({ type: 'done', data: '' }));
-            controller.close();
-            return; // Retry succeeded — skip normal error path
-          } catch (retryErr) {
-            console.warn('[claude-client] PTL retry failed, falling through to error display:', retryErr);
-            // Fall through to normal error handling below
-          }
-        }
 
         // Send structured error JSON so frontend can parse category + hints
         // Falls back gracefully for older frontends that only read raw text
@@ -1570,140 +1360,3 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
   });
 }
 
-// ── Provider Connection Test ─────────────────────────────────────
-
-export interface ConnectionTestResult {
-  success: boolean;
-  error?: {
-    code: string;
-    message: string;
-    suggestion: string;
-    recoveryActions?: Array<{ label: string; url?: string; action?: string }>;
-  };
-}
-
-/**
- * Test a provider connection by sending a direct HTTP request to the API endpoint.
- * Bypasses the Claude Code SDK subprocess entirely to avoid false positives
- * from keychain/OAuth credentials leaking into the test.
- */
-export async function testProviderConnection(config: {
-  apiKey: string;
-  baseUrl: string;
-  protocol: string;
-  authStyle: string;
-  envOverrides?: Record<string, string>;
-  modelName?: string;
-  presetKey?: string;
-  providerName?: string;
-  providerMeta?: { apiKeyUrl?: string; docsUrl?: string; pricingUrl?: string };
-}): Promise<ConnectionTestResult> {
-  const { getPreset, findPresetForLegacy } = await import('./provider-catalog');
-
-  // Look up preset for default model
-  const preset = config.presetKey
-    ? getPreset(config.presetKey)
-    : (config.baseUrl ? findPresetForLegacy(config.baseUrl, 'custom', config.protocol as import('./provider-catalog').Protocol) : undefined);
-
-  // Determine model to use in test request
-  const model = config.modelName
-    || preset?.defaultRoleModels?.default
-    || (preset?.defaultModels?.[0]?.upstreamModelId || preset?.defaultModels?.[0]?.modelId)
-    || 'sonnet';
-
-  // For bedrock/vertex/env_only protocols, we can't do a simple HTTP test
-  if (config.protocol === 'bedrock' || config.protocol === 'vertex' || config.authStyle === 'env_only') {
-    return {
-      success: false,
-      error: { code: 'SKIPPED', message: 'Cloud providers (Bedrock/Vertex) require IAM or OAuth credentials — connection test is not available for this provider type', suggestion: 'Save the configuration and send a message to verify' },
-    };
-  }
-
-  // Build the API URL — Anthropic-compatible endpoint
-  let apiUrl = config.baseUrl || 'https://api.anthropic.com';
-  // Ensure URL ends with /v1/messages for Anthropic-compatible providers
-  if (!apiUrl.endsWith('/v1/messages')) {
-    apiUrl = apiUrl.replace(/\/+$/, '');
-    if (!apiUrl.endsWith('/v1')) {
-      apiUrl += '/v1';
-    }
-    apiUrl += '/messages';
-  }
-
-  // Build headers based on auth style
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'anthropic-version': '2023-06-01',
-  };
-  if (config.authStyle === 'auth_token') {
-    headers['Authorization'] = `Bearer ${config.apiKey}`;
-  } else {
-    headers['x-api-key'] = config.apiKey;
-  }
-
-  // Minimal request body — just enough to verify auth + endpoint
-  const body = JSON.stringify({
-    model,
-    max_tokens: 1,
-    messages: [{ role: 'user', content: 'ping' }],
-  });
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15_000);
-
-  try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers,
-      body,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    // 2xx = success (even if model returns an error in body, auth works)
-    if (response.ok) {
-      return { success: true };
-    }
-
-    // Parse error response
-    let errorBody = '';
-    try { errorBody = await response.text(); } catch { /* ignore */ }
-
-    const classified = classifyError({
-      error: new Error(`HTTP ${response.status}: ${errorBody.slice(0, 500)}`),
-      providerName: config.providerName,
-      baseUrl: config.baseUrl,
-      providerMeta: config.providerMeta,
-    });
-
-    return {
-      success: false,
-      error: {
-        code: classified.category,
-        message: classified.userMessage,
-        suggestion: classified.actionHint,
-        recoveryActions: classified.recoveryActions,
-      },
-    };
-  } catch (err) {
-    clearTimeout(timeoutId);
-
-    // Network errors (ECONNREFUSED, ENOTFOUND, timeout, etc.)
-    const classified = classifyError({
-      error: err,
-      providerName: config.providerName,
-      baseUrl: config.baseUrl,
-      providerMeta: config.providerMeta,
-    });
-
-    return {
-      success: false,
-      error: {
-        code: classified.category,
-        message: classified.userMessage,
-        suggestion: classified.actionHint,
-        recoveryActions: classified.recoveryActions,
-      },
-    };
-  }
-}

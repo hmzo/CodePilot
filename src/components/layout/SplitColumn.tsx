@@ -23,7 +23,6 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
   const [error, setError] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState("");
   const [sessionModel, setSessionModel] = useState("");
-  const [sessionProviderId, setSessionProviderId] = useState("");
   const [sessionInfoLoaded, setSessionInfoLoaded] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [sessionWorkingDir, setSessionWorkingDir] = useState("");
@@ -35,7 +34,6 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
     let cancelled = false;
     setSessionInfoLoaded(false);
     setSessionModel("");
-    setSessionProviderId("");
     async function loadSession() {
       try {
         const res = await fetch(`/api/chat/sessions/${sessionId}`);
@@ -47,13 +45,10 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
           setProjectName(data.session.project_name || "");
           setSessionWorkingDir(data.session.working_directory || "");
 
-          // Resolve model: session → global default → provider's first → localStorage
-          const { resolveSessionModel } = await import("@/lib/resolve-session-model");
+          const { DEFAULT_MODEL_ID, SELECTED_MODEL_STORAGE_KEY } = await import("@/lib/anthropic-models");
           if (cancelled) return;
-          const resolved = await resolveSessionModel(data.session.model || "", data.session.provider_id || "");
-          if (cancelled) return;
-          setSessionModel(resolved.model);
-          setSessionProviderId(resolved.providerId);
+          const fallback = (typeof window !== "undefined" ? localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) : null) || DEFAULT_MODEL_ID;
+          setSessionModel(data.session.model || fallback);
         }
       } catch {
         // ignore
@@ -190,7 +185,6 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
           initialMessages={messages}
           initialHasMore={hasMore}
           modelName={sessionModel}
-          providerId={sessionProviderId}
         />
       </div>
     </div>

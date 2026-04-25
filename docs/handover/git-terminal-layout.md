@@ -122,7 +122,7 @@ panels/GitPanel.tsx (GitPanelContainer)
 
 - 列表显示 current 标识（高亮 + badge）和 dirty 指示器
 - "切换到工作树"按钮：先查 `/api/chat/sessions/by-cwd` 找现有 session，没有则 POST 创建新 session，然后 `router.push`
-- "派生新工作树"：创建 git worktree + 创建新 DB session（继承源 session 的 model/mode/provider 等），自动跳转
+- "派生新工作树"：创建 git worktree + 创建新 DB session（继承源 session 的 model/mode 等），自动跳转
 
 ### 分支切换错误处理
 

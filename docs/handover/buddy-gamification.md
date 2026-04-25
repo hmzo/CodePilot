@@ -2,7 +2,17 @@
 
 # Buddy 游戏化系统 — 技术交接文档
 
-> 上次更新：2026-04-01
+> 上次更新：2026-04-25
+>
+> **2026-04-25 重要变更**：随 provider 子系统下线（[remove-provider-system.md](../exec-plans/active/remove-provider-system.md)），buddy 系统中以下依赖已删除：
+> - `src/lib/task-scheduler.ts` 整体删除（`tasks` / `scheduled_tasks` / `task_run_logs` 表已 DROP）
+> - `src/lib/memory-extractor.ts` 删除
+> - `src/lib/memory-search-mcp.ts` 删除（`codepilot_memory_get` / `codepilot_memory_search` MCP 工具下线，由 Claude Code 自带 `Read`/`Grep` 工具直接读 memory.md 替代）
+> - `POST /api/tasks/*` 路由全部删除（`codepilot_schedule_task` / `codepilot_list_tasks` / `codepilot_cancel_task` MCP 工具下线）
+>
+> 保留：buddy state.json 数据结构、孵化/进化流程、3D 视觉、心跳双模式（"完整 tick" / "软 hint"）、`codepilot-notify` 通用通知 MCP（Telegram + 系统通知）。
+> 心跳触发改为依赖 chat 入口的本地定时器，不再依赖持久化 TaskScheduler。
+> 下文余下内容反映 2026-04-01 的设计快照，部分实现细节已不存在，作为历史决策保留。
 
 ---
 

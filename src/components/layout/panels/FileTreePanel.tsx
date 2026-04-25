@@ -7,14 +7,13 @@ import { usePanel } from "@/hooks/usePanel";
 import { useTranslation } from "@/hooks/useTranslation";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { FileTree } from "@/components/project/FileTree";
-import { TaskList } from "@/components/project/TaskList";
 
 const TREE_MIN_WIDTH = 220;
 const TREE_MAX_WIDTH = 500;
 const TREE_DEFAULT_WIDTH = 280;
 
 export function FileTreePanel() {
-  const { workingDirectory, sessionId, previewFile, setPreviewFile, setPreviewOpen, setFileTreeOpen } = usePanel();
+  const { workingDirectory, previewFile, setPreviewFile, setPreviewOpen, setFileTreeOpen } = usePanel();
   const { t } = useTranslation();
   const [width, setWidth] = useState(TREE_DEFAULT_WIDTH);
 
@@ -68,17 +67,8 @@ export function FileTreePanel() {
           </Button>
         </div>
 
-        {/* Body — TaskList + divider + FileTree */}
+        {/* Body — FileTree */}
         <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
-          {/* Tasks */}
-          <div className="shrink-0 px-3 pb-3">
-            <TaskList sessionId={sessionId} />
-          </div>
-
-          {/* Divider */}
-          <div className="mx-3 mt-1 mb-2 border-t border-border/40" />
-
-          {/* File tree */}
           <div className="flex-1 min-h-0 overflow-hidden">
             <FileTree
               workingDirectory={workingDirectory}

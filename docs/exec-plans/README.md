@@ -45,14 +45,25 @@
 | 文件 | 主题 | 状态 |
 |------|------|------|
 | active/chat-latency-remediation.md | 聊天链路提速 + 模式入口收敛 + MCP 持久开关 | Phase 0 完成，Phase 1-4 待开始 |
+| active/composer-refactor.md | Composer 输入区重构 | 进行中 |
 | active/context-storage-migration.md | 上下文共享与存储迁移 | Phase 0 部分完成，Phase 1-3 待开始 |
+| active/git-terminal-integration.md | Git 集成 + 终端 + 统一布局 | 进行中 |
+| active/memory-system-v3.md | 记忆系统 V3 / 心跳协议 | 进行中 |
+| active/open-issues-2026-03-12.md | 公开问题跟踪 | 滚动更新 |
+| active/qq-bridge-channel.md | QQ Bridge 通道 | 进行中 |
+| active/remove-provider-system.md | 删除 provider 子系统，强制使用 ~/.claude 配置；下线辅助 AI 功能；模型选择器硬编码 | Phase 1-4 已完成，Phase 5-6 收尾中 |
 | active/site-and-docs.md | 官网 + 文档站（apps/site） | Phase 0-1 进行中 |
-| active/weixin-bridge-channel.md | 微信 Bridge 通道一次性交付方案 | One Shot 待开始 |
 | active/unified-context-layer.md | 统一上下文层 + 浮窗助理 + 产品架构演进 | Phase 1-3 已完成，Phase 4-5 待开始 |
-| active/provider-governance.md | 服务商系统治理：Preset Schema 校验、宿主接管、连通性验证、引导 UX、错误治理 | Phase 0 完成，Phase 1-6 待开始 |
+| active/weixin-bridge-channel.md | 微信 Bridge 通道一次性交付方案 | One Shot 待开始 |
 
 ### Completed
 
 | 文件 | 主题 | 完成日期 |
 |------|------|----------|
+| completed/assistant-workspace.md | 助理工作区（人格/记忆/对话式引导/落盘） | 已完成 |
+| completed/cli-upgrade-proxy.md | CLI 版本检测 + 升级 + 系统代理透传 | 已完成 |
 | completed/engineering-quality-assurance.md | 工程质量保障体系（Harness Engineering）— 验证闭环、AI 文档、CDP、执行计划 | 2026-03-04 |
+| completed/provider-governance.md | 服务商系统治理（已废弃，整套 provider 系统已删除） | 2026-04-25 |
+| completed/provider-resolver-refactor.md | 服务商解析器重构（已废弃，整套 provider 系统已删除） | 2026-04-25 |
+| completed/scheduled-tasks-notifications.md | 定时任务 + 通知系统（已废弃，TaskScheduler 随 provider 子系统下线） | 2026-04-25 |
+| completed/skills-mcp-tooling-fix.md | Skills + MCP 工具链修复 | 已完成 |

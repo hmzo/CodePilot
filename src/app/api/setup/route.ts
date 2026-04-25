@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSetting, setSetting, getDb } from '@/lib/db';
+import { getSetting, setSetting } from '@/lib/db';
 import { findClaudeBinary } from '@/lib/platform';
 
 export async function GET() {
@@ -19,38 +19,6 @@ export async function GET() {
         claude = binary ? 'completed' : 'not-configured';
       } catch {
         claude = 'not-configured';
-      }
-    }
-
-    // Provider status — always check real credentials first, skipped is only a fallback
-    let provider: 'not-configured' | 'completed' | 'skipped' | 'needs-fix' = 'not-configured';
-    const db = getDb();
-    const row = db.prepare('SELECT COUNT(*) as cnt FROM api_providers').get() as { cnt: number } | undefined;
-    if (row && row.cnt > 0) {
-      provider = 'completed';
-    } else {
-      // Check env-based or app-settings-based credentials
-      const appToken = getSetting('anthropic_auth_token');
-      if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || appToken) {
-        provider = 'completed';
-      } else {
-        // Check if Claude Code CLI is available — it acts as a provider via SDK proxy
-        // (the built-in 'env' provider in /api/providers/models always lists Claude Code,
-        // so we must recognise the CLI as a valid provider to keep the UI consistent)
-        try {
-          const binary = findClaudeBinary();
-          if (binary) {
-            provider = 'completed';
-          }
-        } catch {
-          // CLI not found — continue to fallback
-        }
-
-        if (provider === 'not-configured') {
-          // No real provider found — check if user previously skipped setup
-          const providerSkipped = getSetting('setup_provider_skipped');
-          provider = providerSkipped === 'true' ? 'skipped' : 'not-configured';
-        }
       }
     }
 
@@ -74,7 +42,6 @@ export async function GET() {
     return NextResponse.json({
       completed,
       claude,
-      provider,
       project,
       defaultProject: defaultProject || undefined,
     });
@@ -96,10 +63,6 @@ export async function PUT(request: NextRequest) {
       case 'claude':
         if (status === 'skipped') setSetting('setup_claude_skipped', 'true');
         else if (status === 'completed') setSetting('setup_claude_skipped', '');
-        break;
-      case 'provider':
-        if (status === 'skipped') setSetting('setup_provider_skipped', 'true');
-        else if (status === 'completed') setSetting('setup_provider_skipped', '');
         break;
       case 'project':
         if (status === 'skipped') {

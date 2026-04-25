@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
     let model = '';
     let systemPrompt = '';
     let mode = 'code';
-    let providerId = '';
     let permissionProfile = 'default';
 
     if (sourceSessionId) {
@@ -33,7 +32,6 @@ export async function POST(req: NextRequest) {
         model = source.model || '';
         systemPrompt = source.system_prompt || '';
         mode = source.mode || 'code';
-        providerId = source.provider_id || '';
         permissionProfile = source.permission_profile || 'default';
       }
     }
@@ -44,7 +42,6 @@ export async function POST(req: NextRequest) {
       systemPrompt,
       actualPath,
       mode,
-      providerId,
       permissionProfile,
     );
 

@@ -1,8 +1,16 @@
 # 记忆系统 V3：Onboarding 重写 + Heartbeat + 渐进式更新
 
 > 创建时间：2026-03-30
-> 最后更新：2026-03-30
+> 最后更新：2026-04-25
 > 产品思考见 [docs/future/core-system-guardrails.md](../../future/core-system-guardrails.md)
+>
+> **2026-04-25 重要变更**：随 provider 子系统下线（[remove-provider-system.md](./remove-provider-system.md)），本计划中的多个组件被一并删除：
+> - **Onboarding** — `onboarding-processor.ts` / `POST /api/workspace/onboarding` / `OnboardingCard` UI 全部删除；前端不再走"对话式 bootstrap"流程，新会话直接进 chat。
+> - **Check-in / Heartbeat** — `checkin-processor.ts` / `POST /api/workspace/checkin` / `CheckInCard` UI 删除；HEARTBEAT.md 文件本身保留，但 CodePilot 不再读它生成自动 prompt。
+> - **Memory Search MCP** — `memory-search-mcp.ts` 删除，claude-client.ts 移除 MCP 注册逻辑；记忆查询完全交给 Claude Code 自带的 `Read` / `Grep` 工具直接读 `~/.codepilot/workspace/memory.md`。
+> - **Memory Flush（Phase 4）** — 永久搁置，因为 LLM 压缩链路已整体删除（由 Claude Code 内置 `/compact` 接管）。
+>
+> 保留下来的部分：助理工作区目录结构（soul/user/claude/memory/heartbeat md 文件）、Telegram 静默规则、文件树展示。本文余下内容反映 2026-03-30 的设计快照，作为历史决策保留。
 
 ## 状态
 

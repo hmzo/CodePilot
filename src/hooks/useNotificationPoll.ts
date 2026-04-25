@@ -12,7 +12,7 @@ const PRIORITY_TO_TOAST: Record<string, ToastType> = {
 };
 
 /**
- * Polls GET /api/tasks/notify to drain server-side notification queue
+ * Polls GET /api/notifications to drain server-side notification queue
  * and display them as toasts + system notifications via Electron IPC.
  */
 export function useNotificationPoll() {
@@ -21,7 +21,7 @@ export function useNotificationPoll() {
   useEffect(() => {
     async function poll() {
       try {
-        const res = await fetch('/api/tasks/notify');
+        const res = await fetch('/api/notifications');
         if (!res.ok) return;
         const data = await res.json();
         const notifications = data.notifications || [];

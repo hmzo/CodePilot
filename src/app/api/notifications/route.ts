@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * POST: Receive a notification from MCP tools / task scheduler and queue it.
+ * POST: Receive a notification from MCP tools and queue it.
  * GET:  Frontend polls this to drain queued notifications for toast display.
+ *
+ * Backed by `src/lib/notification-manager.ts` (in-process ring buffer + Telegram).
+ * Used by `codepilot_notify` MCP tool, the renderer poll hook, and the
+ * Electron tray-mode background poller.
  */
 
 export async function POST(request: NextRequest) {

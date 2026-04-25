@@ -280,7 +280,7 @@ function startBgNotifyPoll(): void {
     try {
       const http = await import('http');
       const data = await new Promise<string>((resolve, reject) => {
-        const req = http.get(`http://127.0.0.1:${port}/api/tasks/notify`, (res) => {
+        const req = http.get(`http://127.0.0.1:${port}/api/notifications`, (res) => {
           let body = '';
           res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
           res.on('end', () => resolve(body));

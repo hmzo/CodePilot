@@ -1,7 +1,7 @@
 <img src="docs/icon-readme.png" width="32" height="32" alt="CodePilot" style="vertical-align: middle; margin-right: 8px;" /> CodePilot
 ===
 
-**多模型 AI Agent 桌面客户端** -- 连接任意 AI 服务商，通过 MCP 和 Skills 扩展能力，手机远程控制，让你的助理学会你的工作方式。
+**Claude Code 的桌面 GUI** -- 在 Claude Agent SDK 之上提供完整的桌面体验，凭据和模型直接读取 `~/.claude` 配置。通过 MCP、Skills 扩展能力，手机远程控制，让你的助理学会你的工作方式。
 
 [![GitHub release](https://img.shields.io/github/v/release/op7418/CodePilot)](https://github.com/op7418/CodePilot/releases)
 [![Downloads](https://img.shields.io/github/downloads/op7418/CodePilot/total)](https://github.com/op7418/CodePilot/releases)
@@ -33,36 +33,26 @@
 
 ## 为什么选择 CodePilot
 
-### 多服务商，统一界面
+### 一份 `~/.claude` 配置走天下
 
-开箱即用连接 **17+ AI 服务商**。对话中随时切换服务商和模型，不丢失上下文。
-
-| 类别 | 服务商 |
-|---|---|
-| 直连 API | Anthropic、OpenRouter |
-| 云平台 | AWS Bedrock、Google Vertex AI |
-| 国内服务商 | 智谱 GLM（国内/海外）、Kimi、Moonshot、MiniMax（国内/海外）、火山引擎方舟（豆包）、小米 MiMo、阿里云百炼（通义） |
-| 本地 & 自托管 | Ollama、LiteLLM |
-| 自定义 | 任何 Anthropic 兼容或 OpenAI 兼容端点 |
-| 媒体 | Google Gemini（图片生成） |
+CodePilot 不再自己维护服务商列表，所有凭据 / Base URL / 默认模型完全由 `~/.claude/settings.json`（或 `claude` 登录态）决定。模型选择器内置 Claude 官方 Sonnet / Opus / Haiku 通过 SDK `model` 选项传入；想用 OpenRouter、Volcengine、Bedrock 等转发服务，按 Anthropic 兼容协议配进 `~/.claude` 即可。
 
 ### 不只是写代码 — 全能 AI Agent
 
 CodePilot 从编程工具起步，已成长为**通用 AI Agent 桌面客户端**：
 
-- **Assistant Workspace** — 人设文件、持久记忆、Onboarding 引导和每日签到。你的助理会学习你的偏好并持续适应。
+- **Assistant Workspace** — 人设文件、持久记忆。你的助理会学习你的偏好并持续适应。
 - **生成式 UI** — AI 可以创建交互式仪表盘、图表和可视化组件，在应用内实时渲染。
 - **远程 Bridge** — 连接 Telegram、飞书、Discord、QQ 和微信。在手机上发消息，在桌面上收回复。
 - **MCP + Skills** — 添加 MCP 服务器（stdio / sse / http），支持运行时监控。定义可复用技能或从 skills.sh 市场安装。
 - **Media Studio** — AI 图片生成，支持批量任务、画廊和标签管理。
-- **任务调度** — 支持 cron 表达式和定时间隔的持久化任务调度。
 
 ### 为日常使用而建
 
 - 暂停、恢复和**回退会话到任意检查点**
 - **分屏**并排运行两个对话
 - 追踪 **Token 用量和费用**，附每日图表
-- 导入 Claude Code CLI 会话历史
+- 直接读取 Claude Code CLI 会话历史
 - 深色 / 浅色主题一键切换
 - 中英文双语界面
 
@@ -72,12 +62,11 @@ CodePilot 从编程工具起步，已成长为**通用 AI Agent 桌面客户端*
 
 ### 路径 A：下载发布版（大多数用户）
 
-1. 从上方[下载](#下载)区域下载对应平台的安装包
-2. 启动 CodePilot
-3. 在 **设置 > 服务商** 中配置服务商 — 添加任意支持的服务商的 API Key
-4. 开始对话
-
-> **提示：** 安装 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview)（`npm install -g @anthropic-ai/claude-code`）可解锁更多高级能力，如直接编辑文件、执行终端命令和 Git 操作。推荐安装但并非基础聊天所必需。
+1. 安装 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview)：`npm install -g @anthropic-ai/claude-code`
+2. 运行一次 `claude` 完成登录（或手动把 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` 写进 `~/.claude/settings.json`）
+3. 从上方[下载](#下载)区域下载对应平台的 CodePilot 安装包
+4. 启动 CodePilot — 凭据会自动从 `~/.claude` 读取
+5. 在对话框选择模型即可开始对话
 
 ### 路径 B：源码构建（开发者）
 
@@ -107,7 +96,7 @@ npm run electron:dev     # 完整桌面应用
 | 推理力度 | Low / Medium / High / Max + Thinking 模式 |
 | 权限控制 | Default / Full Access，逐项审批 |
 | 会话控制 | 暂停、恢复、回退到检查点、归档 |
-| 模型切换 | 对话中随时切换模型 |
+| 模型切换 | 对话中随时在 Claude Sonnet / Opus / Haiku 之间切换 |
 | 分屏 | 并排双会话 |
 | 附件 | 文件和图片，支持多模态视觉 |
 | 斜杠命令 | /help /clear /cost /compact /doctor /review 等 |
@@ -116,23 +105,22 @@ npm run electron:dev     # 完整桌面应用
 
 | 能力 | 说明 |
 |---|---|
-| 服务商 | 17+ 个服务商：Anthropic、OpenRouter、Bedrock、Vertex、智谱 GLM、Kimi、Moonshot、MiniMax、火山引擎、MiMo、百炼、Ollama、LiteLLM、自定义端点 |
+| 配置来源 | 直接读取 `~/.claude/settings.json` — 无需在应用内单独配置服务商 |
 | MCP 服务器 | stdio / sse / http，运行时状态监控 |
 | Skills | 自定义 / 项目 / 全局技能，skills.sh 市场 |
 | Bridge | Telegram / 飞书 / Discord / QQ / 微信 远程控制 |
-| CLI 导入 | 导入 Claude Code CLI .jsonl 会话历史 |
+| CLI 集成 | 读取 Claude Code CLI .jsonl 会话历史 |
 | 图片生成 | Gemini 生图、批量任务、画廊 |
 
 ### 数据与工作区
 
 | 能力 | 说明 |
 |---|---|
-| Assistant Workspace | 人设文件（soul.md、user.md、claude.md、memory.md），Onboarding，每日签到，持久记忆 |
+| Assistant Workspace | 人设文件（soul.md、user.md、claude.md、memory.md），持久记忆 |
 | 生成式 UI | AI 创建的交互式仪表盘和可视化组件 |
 | 文件浏览 | 项目文件树、语法高亮预览 |
 | Git 面板 | 状态、分支、提交、Worktree 管理 |
 | 用量分析 | Token 计数、费用估算、日用量图表 |
-| 任务调度 | 基于 cron 和定时间隔的持久化调度 |
 | 本地存储 | SQLite（WAL 模式），数据全部在本地 |
 | 国际化 | 中文 + 英文 |
 | 主题 | 深色 / 浅色，一键切换 |
@@ -141,11 +129,10 @@ npm run electron:dev     # 完整桌面应用
 
 ## 首次使用
 
-1. **配置服务商** — 前往 **设置 > 服务商**，为你要使用的服务商添加凭证。CodePilot 内置了所有主流服务商的预设 — 选择一个，填入 API Key 即可。
-2. **创建对话** — 选择工作目录、交互模式（Code / Plan / Ask）和模型。
-3. **设置 Assistant Workspace**（可选）— 前往 **设置 > Assistant**，选择工作区目录并开启 Onboarding。CodePilot 会在工作区根目录创建 `soul.md`、`user.md`、`claude.md` 和 `memory.md`。
+1. **确保 `~/.claude` 已配置** — 安装 Claude Code CLI（`npm install -g @anthropic-ai/claude-code`）后运行一次 `claude` 完成登录，或手动把 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` 写进 `~/.claude/settings.json`。
+2. **创建对话** — 选择工作目录、交互模式（Code / Plan / Ask），并在输入框中选择模型。
+3. **设置 Assistant Workspace**（可选）— 前往 **设置 > Assistant**，选择工作区目录。CodePilot 会在工作区根目录创建 `soul.md`、`user.md`、`claude.md` 和 `memory.md`。
 4. **添加 MCP 服务器**（可选）— 在侧边栏的 **MCP** 页面添加和管理 MCP 服务器。自定义技能在单独的 **Skills** 页面管理。
-5. **安装 Claude Code CLI**（可选）— 如需文件编辑和终端命令等高级功能，安装 CLI：`npm install -g @anthropic-ai/claude-code`
 
 ---
 
@@ -182,15 +169,14 @@ xattr -cr /Applications/CodePilot.app
 
 **入门指南：**
 - [快速开始](#快速开始) -- 下载或源码构建
-- [首次使用](#首次使用) -- 服务商配置、工作区设置
+- [首次使用](#首次使用) -- `~/.claude` 配置、工作区设置
 - [安装指南](https://www.codepilot.sh/zh/docs/installation) -- 详细安装说明
 
 **用户指南：**
-- [服务商配置](https://www.codepilot.sh/zh/docs/providers) -- 配置 AI 服务商和自定义端点
 - [MCP 服务器](https://www.codepilot.sh/zh/docs/mcp) -- 添加和管理 Model Context Protocol 服务器
 - [Skills 技能](https://www.codepilot.sh/zh/docs/skills) -- 自定义技能、项目技能和 skills.sh 市场
 - [Bridge 桥接](https://www.codepilot.sh/zh/docs/bridge) -- 通过 Telegram、飞书、Discord、QQ、微信远程控制
-- [Assistant Workspace](https://www.codepilot.sh/zh/docs/assistant-workspace) -- 人设文件、Onboarding、记忆、每日签到
+- [Assistant Workspace](https://www.codepilot.sh/zh/docs/assistant-workspace) -- 人设文件、记忆
 - [常见问题](https://www.codepilot.sh/zh/docs/faq) -- 常见问题和解决方案
 
 **开发文档：**
@@ -205,13 +191,13 @@ xattr -cr /Applications/CodePilot.app
 <details>
 <summary>必须安装 Claude Code CLI 吗？</summary>
 
-不需要。你可以使用任何支持的服务商（OpenRouter、智谱 GLM、火山引擎、Ollama 等）直接使用 CodePilot，无需安装 Claude Code CLI。CLI 仅在你需要 Claude 直接编辑文件、执行终端命令或进行 Git 操作时才需要。对于聊天和助理功能，只需配置一个服务商即可开始使用。
+需要。CodePilot 是 `claude` 的 GUI 外壳，凭据 / Base URL / 默认模型完全依赖 `~/.claude/settings.json`（或 `claude` 登录态）。在启动 CodePilot 之前请先 `npm install -g @anthropic-ai/claude-code` 并运行一次 `claude` 完成登录，或手动把 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` 写进设置文件。
 </details>
 
 <details>
-<summary>配置了服务商但没有模型出现</summary>
+<summary>能用非 Anthropic 的服务商（OpenRouter、智谱等）吗？</summary>
 
-确认 API Key 有效且端点可访问。部分服务商（Bedrock、Vertex）除 API Key 外还需要额外的环境变量或 IAM 配置。使用内置诊断功能（**设置 > 服务商 > 运行诊断**）检查连通性。
+可以 — 但要在 Claude Code 这一层配。把 `~/.claude/settings.json` 里的 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` 指向你的网关（任意 Anthropic 兼容端点都行）。CodePilot 会跟着 SDK 一起读这份配置。
 </details>
 
 <details>

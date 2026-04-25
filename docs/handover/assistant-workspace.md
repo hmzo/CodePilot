@@ -1,5 +1,14 @@
 # 助理工作区 — 交接文档
 
+> **2026-04-25 重要变更**：随 provider 子系统下线（[remove-provider-system.md](../exec-plans/active/remove-provider-system.md)），本文档描述的"对话式引导问卷"、"每日轻量问询"、"Quick Actions"功能已删除：
+> - `POST /api/workspace/{onboarding,checkin,quick-actions}` 路由删除
+> - `OnboardingCard` / `CheckInCard` / `QuickActions` 组件删除
+> - `onboarding-processor.ts` / `checkin-processor.ts` / `text-generator.ts` 删除
+>
+> 保留：助理工作区目录结构（`soul.md` / `user.md` / `claude.md` / `memory.md` / `heartbeat.md`）、文件树展示、Telegram 静默规则、buddy 系统集成。
+> 现在 CodePilot 把"读记忆 / 写记忆 / 更新人格"完全交给 Claude Code 自带的 `Read`/`Edit`/`Grep` 工具，模型直接对工作区文件操作（不再走 in-process MCP）。
+> 下文余下内容反映此前的设计快照，作为历史决策保留。
+
 ## 概述
 
 助理工作区让用户指定一个目录存放 AI 人格/记忆文件（soul.md、user.md、memory.md、claude.md），在助理项目会话中自动注入系统提示词。附带对话式引导问卷（13 题）和每日轻量问询（3 题）。V2 新增索引/检索/分类/组织能力。

@@ -1,10 +1,14 @@
 # 首次引导 Setup Center + Claude Code 环境检测
 
-> 完成时间：2026-03-13 | 涉及 ~25 个文件 | 6 阶段交付
+> 完成时间：2026-03-13 | 2026-04-25 调整：provider 配置链路下线
+> 产品思考见 [docs/insights/remove-provider.md](../insights/remove-provider.md)
+> 关联：[docs/exec-plans/active/remove-provider-system.md](../exec-plans/active/remove-provider-system.md)
 
 ## 概述
 
-为 CodePilot 新增可跳过的首次设置引导（Setup Center），替代原先被动的"失败后提示"模式。引导覆盖三个核心前置条件：Claude Code CLI 连接、API Provider 配置、默认项目目录。同时修复 Windows 顶栏重叠，统一错误反馈路径。
+CodePilot 的首次设置引导（Setup Center），用于替代被动的"失败后提示"模式。当前覆盖两个核心前置条件：Claude Code CLI 连接、默认项目目录。引导可跳过，但 `/chat` 页发消息前仍会做独立校验。
+
+> **历史变更**：早期版本还有"API Provider 配置"卡片（`ProviderCard`），用于检测 `api_providers` 表 + `ANTHROPIC_API_KEY` 等凭据。2026-04-25 provider 子系统整体下线后，引导只保留 CLI 检测和目录选择，凭据完全交给 `~/.claude/settings.json` 与 `claude` CLI 登录态。
 
 ## 架构
 
@@ -17,13 +21,12 @@ AppShell.useEffect → GET /api/setup
   ↓
 setup_completed !== true?
   ├── 是 → 弹出 SetupCenter 蒙层
-  │         ├── ClaudeCodeCard: 检测 CLI 环境
-  │         ├── ProviderCard: 检测 API 凭据
-  │         └── ProjectDirCard: 选择项目目录
+  │         ├── ClaudeCodeCard: 检测 CLI 环境 + 冲突
+  │         └── ProjectDirCard: 选择默认项目目录
   │         用户可逐个完成或跳过，全部完成后自动关闭
   └── 否 → 正常进入应用
               ↓
-         /chat 页独立校验 provider + 目录
+         /chat 页独立校验 ~/.claude 凭据 + 目录
          缺失时显示 ChatEmptyState 引导
 ```
 
@@ -34,27 +37,27 @@ AppShell
   └── SetupCenter (fixed overlay, z-50)
         ├── WelcomeCard (静态)
         ├── ClaudeCodeCard → /api/claude-status
-        ├── ProviderCard → /api/providers + /api/settings/app
         └── ProjectDirCard → /api/setup/recent-projects
 ```
 
 ### 状态持久化
 
-Setup 状态存储在 SQLite settings 表，键名：
+Setup 状态存储在 SQLite settings 表：
 
 | 键 | 值 | 说明 |
 |---|---|---|
 | `setup_completed` | `'true'` | 整体完成标记，控制是否自动弹出 |
 | `setup_claude_skipped` | `'true'` | 用户跳过了 Claude Code 检测 |
-| `setup_provider_skipped` | `'true'` | 用户跳过了 Provider 配置 |
 | `setup_project_skipped` | `'true'` | 用户跳过了项目目录选择 |
 | `setup_default_project` | 路径字符串 | 用户选择的默认项目目录 |
 
+> ~~`setup_provider_skipped`~~：随 provider 子系统下线一并删除（`db.ts` 迁移会清理历史值）。
+
 ### 重新打开
 
-- 设置页 GeneralSection 中有"首次设置引导"入口（FieldRow + Open 按钮）
+- 设置页 GeneralSection 中有"首次设置引导"入口
 - 代码中任何位置可通过 `window.dispatchEvent(new CustomEvent('open-setup-center'))` 触发
-- 支持 `initialCard` 参数跳转到指定卡片：`{ detail: { initialCard: 'provider' } }`
+- 支持 `initialCard` 参数跳转到指定卡片：`{ detail: { initialCard: 'claude' } }` 或 `'project'`
 
 ### 自动关闭逻辑
 
@@ -114,26 +117,11 @@ findClaudeBinary() + findAllClaudeBinaries()  (src/lib/platform.ts)
 - **复用 InstallWizard 的卸载逻辑**：`getUninstallCommand()` 与 InstallWizard 的 `getUninstallAdvice()` 保持一致
 - **CopyableCommand 组件**：卸载命令支持一键复制，降低操作门槛
 
-## Provider 检测（详细）
+## 凭据检测（已下线）
 
-### 三条凭据来源（优先级从高到低）
-
-1. **DB provider**：`api_providers` 表中配置的自定义服务商（含 preset 预设）
-2. **进程环境变量**：`ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN`
-3. **App settings token**：`getSetting('anthropic_auth_token')`（旧版本的凭据存储路径）
-
-### 关键判断规则
-
-- **`ANTHROPIC_BASE_URL` 不算凭据**：只有 `ANTHROPIC_API_KEY` 和 `ANTHROPIC_AUTH_TOKEN` 才是真正的认证凭据，仅有 base URL 无法发起请求
-- **`OPENAI_API_KEY` 不参与判断**：运行时 env 解析不支持它，setup 也不应把它算作可用 provider
-- **`skipped` 不等于 `completed`**：/chat 页只认 `completed`，跳过引导的用户在发消息前仍会看到"去配置 provider"的提示
-- **skipped 不是粘性状态**：`/api/setup` 先查真实凭据，有任何一条就返回 `completed`；只有完全没有凭据时才看 `setup_provider_skipped` flag
-
-### ProviderCard 交互
-
-- 检测到 env 凭据 → 显示"使用 Claude Code 环境"按钮，一键确认
-- 无凭据 → 显示"添加服务商"按钮，跳转 `/settings#providers`（hash 路由）
-- 监听 `provider-changed` 事件自动刷新状态
+> 旧版的 `ProviderCard` 会检测 `api_providers` 表、`ANTHROPIC_API_KEY` env、`anthropic_auth_token` setting 三条凭据来源。
+> 现在 CodePilot 不再读这些来源，凭据完全由 Claude Agent SDK 通过 `settingSources: ['user', 'project', 'local']` 直接从 `~/.claude/settings.json` 与 `claude` CLI 登录态读取。
+> `/chat` 页若想做"发消息前提示用户去登录"，应该改为检测 `~/.claude/.credentials.json` 是否存在，而不是查 DB。
 
 ## 项目目录
 
@@ -182,7 +170,7 @@ ChatListPanel 的 `handleNewChat` 使用相同的回退链：最近目录 → de
 
 ## 文件清单
 
-### 新增文件
+### 现存文件
 
 | 文件 | 用途 |
 |---|---|
@@ -196,26 +184,18 @@ ChatListPanel 的 `handleNewChat` 使用相同的回退链：最近目录 → de
 | `src/components/setup/SetupCard.tsx` | 可复用卡片壳 |
 | `src/components/setup/WelcomeCard.tsx` | 欢迎卡片 |
 | `src/components/setup/ClaudeCodeCard.tsx` | Claude Code 检测 + 冲突处理 |
-| `src/components/setup/ProviderCard.tsx` | Provider 检测 + 配置入口 |
 | `src/components/setup/ProjectDirCard.tsx` | 项目目录选择 |
 | `src/components/chat/ChatEmptyState.tsx` | /chat 空状态引导 |
 
-### 关键修改文件
+### 已删除文件（2026-04-25）
 
-| 文件 | 改动 |
+| 文件 | 删除理由 |
 |---|---|
-| `src/components/layout/AppShell.tsx` | 挂载 SetupCenter + Toaster |
-| `src/components/layout/UnifiedTopBar.tsx` | Windows safe zone、路径兼容、移除 commit/push 按钮 |
-| `src/components/git/GitStatusSection.tsx` | 新增 Commit + Push 按钮 |
-| `src/components/layout/ConnectionStatus.tsx` | 断连时派发 setup-center 事件 |
-| `src/components/settings/GeneralSection.tsx` | 首次设置引导入口 |
-| `src/app/chat/page.tsx` | 目录校验回退链 + provider 检测 + ChatEmptyState |
-| `src/components/layout/ChatListPanel.tsx` | 失效目录回退到 defaultProject |
-| `src/i18n/en.ts` / `zh.ts` | ~80 个新 i18n 键 |
+| `src/components/setup/ProviderCard.tsx` | provider 子系统整体下线 |
 
 ## 已知限制
 
 - Setup Center 不是分步向导，而是所有卡片同时展示在滚动面板中
 - Claude Code 冲突检测依赖 `findAllClaudeBinaries()` 的路径扫描，可能遗漏非标准安装路径
-- Provider 检测不覆盖 `OPENAI_API_KEY`（运行时 env 模式不支持），如果未来支持需要同步更新检测逻辑
+- 没有"在 Setup Center 内检测 `~/.claude` 凭据"的卡片：用户首次启动并不知道是否需要先 `claude` 登录；目前只能在 `/chat` 页发消息后看到错误。后续如果要补回这个体验，可以新增一张轻量"Login to Claude"卡，调用 IPC 让用户跳到外部终端跑 `claude`
 - 目录校验使用 `/api/files/browse` 接口，额外产生一次文件系统访问

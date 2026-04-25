@@ -15,7 +15,9 @@ export interface ChatSession {
   status: 'active' | 'archived';
   mode?: 'code' | 'plan' | 'ask';
   needs_approval?: boolean;
+  /** @deprecated Provider system has been removed; column is retained as a dead column for migration compat. */
   provider_name: string;
+  /** @deprecated Provider system has been removed; column is retained as a dead column for migration compat. */
   provider_id: string;
   sdk_cwd: string;
   runtime_status: string;
@@ -113,23 +115,6 @@ export interface CliToolItem {
   summary: string;
 }
 
-// ==========================================
-// Task Types
-// ==========================================
-
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
-
-export interface TaskItem {
-  id: string;
-  session_id: string;
-  title: string;
-  status: TaskStatus;
-  description: string | null;
-  source: 'user' | 'sdk';
-  created_at: string;
-  updated_at: string;
-}
-
 export interface Message {
   id: string;
   session_id: string;
@@ -175,114 +160,6 @@ export interface Setting {
 }
 
 // ==========================================
-// API Provider Types
-// ==========================================
-
-export interface ApiProvider {
-  id: string;
-  name: string;
-  provider_type: string; // legacy: 'anthropic' | 'openrouter' | 'bedrock' | 'vertex' | 'custom'
-  /** Wire protocol — new field, takes precedence over provider_type for dispatch */
-  protocol: string; // 'anthropic' | 'openai-compatible' | 'openrouter' | 'bedrock' | 'vertex' | 'google' | 'gemini-image'
-  base_url: string;
-  api_key: string;
-  is_active: number; // SQLite boolean: 0 or 1
-  sort_order: number;
-  extra_env: string; // JSON string of Record<string, string> (legacy, prefer env_overrides_json)
-  /** Extra headers to send with API requests — JSON string of Record<string, string> */
-  headers_json: string;
-  /** Environment overrides for Claude Code SDK subprocess — JSON string of Record<string, string> */
-  env_overrides_json: string;
-  /** Semantic model role mapping — JSON string of { default?, reasoning?, small?, haiku?, sonnet?, opus? } */
-  role_models_json: string;
-  /** Per-provider options — JSON string of { thinking_mode?, context_1m? } */
-  options_json: string;
-  notes: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProviderModelGroup {
-  provider_id: string;       // provider DB id, or 'env' for environment variables
-  provider_name: string;
-  provider_type: string;
-  /** True if this provider only supports Claude Code SDK wire protocol, not standard Messages API */
-  sdkProxyOnly?: boolean;
-  models: Array<{
-    value: string;           // internal/UI model ID
-    label: string;           // display name
-    upstreamModelId?: string; // actual API model ID (if different from value)
-    contextWindow?: number;
-    description?: string;
-    supportsEffort?: boolean;
-    supportedEffortLevels?: string[];
-    supportsAdaptiveThinking?: boolean;
-    capabilities?: Record<string, unknown>;
-    variants?: Record<string, unknown>;
-  }>;
-}
-
-export interface ProviderModel {
-  id: string;
-  provider_id: string;
-  model_id: string;
-  upstream_model_id: string;
-  display_name: string;
-  capabilities_json: string;
-  variants_json: string;
-  sort_order: number;
-  enabled: number; // SQLite boolean
-  created_at: string;
-}
-
-export interface CreateProviderRequest {
-  name: string;
-  provider_type?: string;
-  protocol?: string;
-  base_url?: string;
-  api_key?: string;
-  extra_env?: string;
-  headers_json?: string;
-  env_overrides_json?: string;
-  role_models_json?: string;
-  options_json?: string;
-  notes?: string;
-}
-
-export interface UpdateProviderRequest {
-  name?: string;
-  provider_type?: string;
-  protocol?: string;
-  base_url?: string;
-  api_key?: string;
-  extra_env?: string;
-  headers_json?: string;
-  env_overrides_json?: string;
-  role_models_json?: string;
-  options_json?: string;
-  notes?: string;
-  sort_order?: number;
-}
-
-/** Provider options stored in options_json (per-provider) or settings (global) */
-export interface ProviderOptions {
-  thinking_mode?: 'adaptive' | 'enabled' | 'disabled';
-  context_1m?: boolean;
-  /** Global default model ID — used for new sessions */
-  default_model?: string;
-  /** Global default model's provider ID — which provider the default model belongs to */
-  default_model_provider?: string;
-}
-
-export interface ProvidersResponse {
-  providers: ApiProvider[];
-}
-
-export interface ProviderResponse {
-  provider: ApiProvider;
-}
-
-// ==========================================
 // Token Usage
 // ==========================================
 
@@ -304,7 +181,6 @@ export interface CreateSessionRequest {
   system_prompt?: string;
   working_directory?: string;
   mode?: string;
-  provider_id?: string;
   permission_profile?: string;
 }
 
@@ -313,7 +189,6 @@ export interface SendMessageRequest {
   content: string;
   model?: string;
   mode?: string;
-  provider_id?: string;
 }
 
 export interface UpdateMCPConfigRequest {
@@ -342,18 +217,6 @@ export interface FilePreviewRequest {
 }
 
 // --- Task API ---
-
-export interface CreateTaskRequest {
-  session_id: string;
-  title: string;
-  description?: string;
-}
-
-export interface UpdateTaskRequest {
-  title?: string;
-  status?: TaskStatus;
-  description?: string;
-}
 
 // --- Skill API ---
 
@@ -449,16 +312,6 @@ export interface FileTreeResponse {
 
 export interface FilePreviewResponse {
   preview: FilePreview;
-}
-
-// --- Task API Responses ---
-
-export interface TasksResponse {
-  tasks: TaskItem[];
-}
-
-export interface TaskResponse {
-  task: TaskItem;
 }
 
 // --- Skill API Responses ---
@@ -593,7 +446,6 @@ export type SetupCardStatus = 'not-configured' | 'completed' | 'skipped' | 'need
 export interface SetupState {
   completed: boolean;
   claude: SetupCardStatus;
-  provider: SetupCardStatus;
   project: SetupCardStatus;
   defaultProject?: string;
 }
@@ -1001,11 +853,6 @@ export interface ClaudeStreamOptions {
   files?: FileAttachment[];
   imageAgentMode?: boolean;
   toolTimeoutSeconds?: number;
-  provider?: ApiProvider;
-  /** Explicit provider ID (e.g. 'env') — passed to resolveForClaudeCode */
-  providerId?: string;
-  /** Session's stored provider ID — passed to resolveForClaudeCode */
-  sessionProviderId?: string;
   /** Recent conversation history from DB — used as fallback context when SDK resume is unavailable or fails */
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
   /** Compressed session summary — used as context skeleton in fallback mode */
@@ -1202,28 +1049,3 @@ export interface WeixinContextTokenRecord {
   updatedAt: string;
 }
 
-// ==========================================
-// Scheduled Tasks
-// ==========================================
-
-export interface ScheduledTask {
-  id: string;
-  name: string;
-  prompt: string;
-  schedule_type: 'cron' | 'interval' | 'once';
-  schedule_value: string;
-  next_run: string;
-  last_run?: string;
-  last_status?: 'success' | 'error' | 'skipped' | 'running';
-  last_error?: string;
-  last_result?: string;
-  consecutive_errors: number;
-  status: 'active' | 'paused' | 'completed' | 'disabled';
-  priority: 'low' | 'normal' | 'urgent';
-  notify_on_complete: number;
-  session_id?: string;
-  working_directory?: string;
-  permanent: number;
-  created_at: string;
-  updated_at: string;
-}

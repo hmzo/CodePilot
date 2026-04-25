@@ -1,13 +1,17 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useRef } from 'react';
-import type { MediaJob, MediaJobItem, PlannerOutput, PlannerItem, JobProgressEvent } from '@/types';
+import type { MediaJob, MediaJobItem, PlannerOutput } from '@/types';
 
 // ==========================================
 // Types
 // ==========================================
 
-export type BatchPhase = 'idle' | 'entry' | 'planning' | 'reviewing' | 'executing' | 'completed' | 'syncing';
+// Note: 'entry' and 'planning' phases were removed when the provider system
+// was deleted — Claude generates the plan inline as a ```batch-plan``` JSON
+// fence which is rendered by `BatchPlanInlinePreview`. The hook only handles
+// reviewing → executing → completed → syncing once a plan has been injected.
+export type BatchPhase = 'idle' | 'reviewing' | 'executing' | 'completed' | 'syncing';
 
 export interface BatchImageGenState {
   enabled: boolean;
@@ -15,7 +19,6 @@ export interface BatchImageGenState {
   currentJob: MediaJob | null;
   items: MediaJobItem[];
   plannerOutput: PlannerOutput | null;
-  planningText: string;
   progress: {
     total: number;
     completed: number;
@@ -28,10 +31,6 @@ export interface BatchImageGenState {
 export interface BatchImageGenContextValue {
   state: BatchImageGenState;
   setEnabled: (v: boolean) => void;
-  startPlanning: (params: { stylePrompt: string; docPaths?: string[]; docContent?: string; count?: number; sessionId?: string }) => Promise<void>;
-  updatePlanItem: (index: number, updates: Partial<PlannerItem>) => void;
-  addPlanItem: () => void;
-  removePlanItem: (index: number) => void;
   executeJob: (sessionId?: string) => Promise<void>;
   pauseJob: () => Promise<void>;
   resumeJob: () => Promise<void>;
@@ -66,7 +65,6 @@ const initialState: BatchImageGenState = {
   currentJob: null,
   items: [],
   plannerOutput: null,
-  planningText: '',
   progress: { total: 0, completed: 0, failed: 0, processing: 0 },
   error: null,
 };
@@ -79,125 +77,9 @@ export function useBatchImageGenState(): BatchImageGenContextValue {
     setState(prev => ({
       ...prev,
       enabled: v,
-      phase: v ? 'entry' : 'idle',
+      phase: 'idle',
       error: null,
     }));
-  }, []);
-
-  const startPlanning = useCallback(async (params: {
-    stylePrompt: string;
-    docPaths?: string[];
-    docContent?: string;
-    count?: number;
-    sessionId?: string;
-  }) => {
-    setState(prev => ({ ...prev, phase: 'planning', planningText: '', error: null }));
-
-    try {
-      const res = await fetch('/api/media/jobs/plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stylePrompt: params.stylePrompt,
-          docPaths: params.docPaths,
-          docContent: params.docContent,
-          count: params.count,
-          sessionId: params.sessionId,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Planning failed' }));
-        throw new Error(err.error || 'Planning failed');
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error('No response stream');
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let fullText = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        let eventType = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-
-            if (eventType === 'text') {
-              fullText += data.chunk;
-              setState(prev => ({ ...prev, planningText: fullText }));
-            } else if (eventType === 'plan_complete') {
-              const plan = data.plan as PlannerOutput;
-              setState(prev => ({
-                ...prev,
-                phase: 'reviewing',
-                plannerOutput: plan,
-                planningText: fullText,
-              }));
-            } else if (eventType === 'error') {
-              setState(prev => ({
-                ...prev,
-                phase: 'entry',
-                error: data.message || 'Planning failed',
-              }));
-            }
-          }
-        }
-      }
-    } catch (err) {
-      setState(prev => ({
-        ...prev,
-        phase: 'entry',
-        error: err instanceof Error ? err.message : 'Planning failed',
-      }));
-    }
-  }, []);
-
-  const updatePlanItem = useCallback((index: number, updates: Partial<PlannerItem>) => {
-    setState(prev => {
-      if (!prev.plannerOutput) return prev;
-      const newItems = [...prev.plannerOutput.items];
-      newItems[index] = { ...newItems[index], ...updates };
-      return { ...prev, plannerOutput: { ...prev.plannerOutput, items: newItems } };
-    });
-  }, []);
-
-  const addPlanItem = useCallback(() => {
-    setState(prev => {
-      if (!prev.plannerOutput) return prev;
-      const newItem: PlannerItem = {
-        prompt: '',
-        aspectRatio: '1:1',
-        resolution: '1K',
-        tags: [],
-        sourceRefs: [],
-      };
-      return {
-        ...prev,
-        plannerOutput: {
-          ...prev.plannerOutput,
-          items: [...prev.plannerOutput.items, newItem],
-        },
-      };
-    });
-  }, []);
-
-  const removePlanItem = useCallback((index: number) => {
-    setState(prev => {
-      if (!prev.plannerOutput) return prev;
-      const newItems = prev.plannerOutput.items.filter((_, i) => i !== index);
-      return { ...prev, plannerOutput: { ...prev.plannerOutput, items: newItems } };
-    });
   }, []);
 
   const executeJob = useCallback(async (sessionId?: string) => {
@@ -455,7 +337,7 @@ export function useBatchImageGenState(): BatchImageGenContextValue {
     setState(initialState);
   }, []);
 
-  const injectPlanAndExecute = useCallback(async (plan: PlannerOutput, sessionId?: string) => {
+  const injectPlanAndExecute = useCallback(async (plan: PlannerOutput, _sessionId?: string) => {
     // Inject plan into state so the UI shows the reviewing phase
     setState(prev => ({
       ...prev,
@@ -469,10 +351,6 @@ export function useBatchImageGenState(): BatchImageGenContextValue {
   return {
     state,
     setEnabled,
-    startPlanning,
-    updatePlanItem,
-    addPlanItem,
-    removePlanItem,
     executeJob,
     pauseJob,
     resumeJob,

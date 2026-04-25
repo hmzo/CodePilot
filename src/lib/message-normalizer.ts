@@ -5,7 +5,7 @@
  * 1. normalizeMessageContent — strips metadata, summarizes tool blocks (always applied)
  * 2. microCompactMessage — age-based token truncation for old messages (fallback path only)
  *
- * Used by buildFallbackContext (claude-client.ts) and compressConversation (context-compressor.ts).
+ * Used by buildFallbackContext (claude-client.ts).
  */
 
 // ── Microcompaction constants ───────────────────────────────────────

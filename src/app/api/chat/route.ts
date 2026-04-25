@@ -1,17 +1,11 @@
 import { NextRequest } from 'next/server';
 import { streamClaude } from '@/lib/claude-client';
-import { addMessage, getMessages, getSession, getSessionSummary, updateSessionTitle, updateSdkSessionId, updateSessionModel, updateSessionProvider, updateSessionProviderId, getSetting, acquireSessionLock, renewSessionLock, releaseSessionLock, setSessionRuntimeStatus, syncSdkTasks } from '@/lib/db';
-import { resolveProvider as resolveProviderUnified } from '@/lib/provider-resolver';
+import { addMessage, getMessages, getSession, getSessionSummary, updateSessionTitle, updateSdkSessionId, updateSessionModel, getSetting, acquireSessionLock, renewSessionLock, releaseSessionLock, setSessionRuntimeStatus } from '@/lib/db';
 import { notifySessionStart, notifySessionComplete, notifySessionError } from '@/lib/telegram-bot';
-import { extractCompletion } from '@/lib/onboarding-completion';
 import { loadCodePilotMcpServers } from '@/lib/mcp-loader';
 import { assembleContext } from '@/lib/context-assembler';
 import type { SendMessageRequest, SSEEvent, TokenUsage, MessageContentBlock, FileAttachment, ClaudeStreamOptions, MediaBlock } from '@/types';
 import { saveMediaToLibrary } from '@/lib/media-saver';
-import { ensureSchedulerRunning } from '@/lib/task-scheduler';
-
-// Start the task scheduler on first API call
-ensureSchedulerRunning();
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -25,8 +19,8 @@ export async function POST(request: NextRequest) {
   let activeLockId: string | undefined;
 
   try {
-    const body: SendMessageRequest & { files?: FileAttachment[]; toolTimeout?: number; provider_id?: string; systemPromptAppend?: string; autoTrigger?: boolean; thinking?: unknown; effort?: string; enableFileCheckpointing?: boolean; displayOverride?: string; context_1m?: boolean } = await request.json();
-    const { session_id, content, model, mode, files, toolTimeout, provider_id, systemPromptAppend, autoTrigger, thinking, effort, enableFileCheckpointing, displayOverride, context_1m } = body;
+    const body: SendMessageRequest & { files?: FileAttachment[]; toolTimeout?: number; systemPromptAppend?: string; autoTrigger?: boolean; thinking?: unknown; effort?: string; enableFileCheckpointing?: boolean; displayOverride?: string; context_1m?: boolean } = await request.json();
+    const { session_id, content, model, mode, files, toolTimeout, systemPromptAppend, autoTrigger, thinking, effort, enableFileCheckpointing, displayOverride, context_1m } = body;
 
     console.log('[chat API] content length:', content.length, 'first 200 chars:', content.slice(0, 200));
     console.log('[chat API] systemPromptAppend:', systemPromptAppend ? `${systemPromptAppend.length} chars` : 'none');
@@ -58,49 +52,6 @@ export async function POST(request: NextRequest) {
     activeSessionId = session_id;
     activeLockId = lockId;
     setSessionRuntimeStatus(session_id, 'running');
-
-    // ── /compact command handler ────────────────────────────────────
-    if (content.trim() === '/compact') {
-      try {
-        const { compressConversation, resetCompressionState } = await import('@/lib/context-compressor');
-        const { getMessages: getDbMessages, getSessionSummary: getDbSummary, updateSessionSummary: updateDbSummary, addMessage: addDbMessage } = await import('@/lib/db');
-
-        resetCompressionState(session_id);
-        const { messages: allMsgs } = getDbMessages(session_id, { limit: 200, excludeHeartbeatAck: true });
-        const existingSummary = getDbSummary(session_id).summary;
-
-        if (allMsgs.length < 4) {
-          const msg = '对话还很短，暂不需要压缩。';
-          addDbMessage(session_id, 'assistant', JSON.stringify([{ type: 'text', text: msg }]));
-          releaseSessionLock(session_id, lockId);
-          setSessionRuntimeStatus(session_id, 'idle');
-          const sseData = `data: ${JSON.stringify({ type: 'text', data: msg })}\n\ndata: ${JSON.stringify({ type: 'done' })}\n\n`;
-          return new Response(sseData, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } });
-        }
-
-        const msgData = allMsgs.map(m => ({ role: m.role, content: m.content }));
-        const result = await compressConversation({
-          sessionId: session_id,
-          messages: msgData,
-          existingSummary: existingSummary || undefined,
-          providerId: provider_id || session.provider_id || undefined,
-          sessionModel: model || session.model || undefined,
-        });
-
-        updateDbSummary(session_id, result.summary);
-        const msg = `上下文已压缩。压缩了 ${result.messagesCompressed} 条消息，预计节省 ~${Math.round(result.estimatedTokensSaved / 1000)}K tokens。`;
-        addDbMessage(session_id, 'assistant', JSON.stringify([{ type: 'text', text: msg }]));
-        releaseSessionLock(session_id, lockId);
-        setSessionRuntimeStatus(session_id, 'idle');
-        const sseData = `data: ${JSON.stringify({ type: 'text', data: msg })}\n\ndata: ${JSON.stringify({ type: 'done' })}\n\n`;
-        return new Response(sseData, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } });
-      } catch (compactErr) {
-        console.error('[chat API] /compact failed:', compactErr);
-        releaseSessionLock(session_id, lockId);
-        setSessionRuntimeStatus(session_id, 'idle');
-        return new Response(JSON.stringify({ error: 'Compression failed' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-      }
-    }
 
     // Telegram notification: session started (fire-and-forget)
     // Skip for auto-trigger turns (onboarding/heartbeat) — these are invisible system triggers
@@ -143,32 +94,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Determine model: request override > session model > default setting
+    // Determine model: request override > session model > default setting.
+    // Model ID is now passed straight through to the SDK, which forwards it
+    // upstream as ANTHROPIC_MODEL. CodePilot does not map IDs anymore.
     const effectiveModel = model || session.model || getSetting('default_model') || undefined;
 
-    // Persist model and provider to session so usage stats can group by model+provider.
+    // Persist model to session so usage stats can group by model.
     // This runs on every message but the DB writes are cheap (single UPDATE by PK).
     if (effectiveModel && effectiveModel !== session.model) {
       updateSessionModel(session_id, effectiveModel);
-    }
-
-    // Resolve provider via unified resolver (same logic for chat, bridge, onboarding, etc.)
-    const effectiveProviderId = provider_id || session.provider_id || '';
-    const resolved = resolveProviderUnified({
-      providerId: effectiveProviderId || undefined,
-      sessionProviderId: session.provider_id || undefined,
-      model: model || undefined,
-      sessionModel: session.model || undefined,
-    });
-    const resolvedProvider = resolved.provider;
-
-    const providerName = resolvedProvider?.name || '';
-    if (providerName !== (session.provider_name || '')) {
-      updateSessionProvider(session_id, providerName);
-    }
-    const persistProviderId = effectiveProviderId || provider_id || '';
-    if (persistProviderId !== (session.provider_id || '')) {
-      updateSessionProviderId(session_id, persistProviderId);
     }
 
     // Resolve permission mode from request body (sent by frontend on each message)
@@ -243,86 +177,28 @@ export async function POST(request: NextRequest) {
     // All other MCP servers are auto-loaded by the SDK via settingSources.
     const mcpServers = loadCodePilotMcpServers();
 
-    // ── Context compression check ───────────────────────────────────
-    // Estimate next-turn context size and compress if over threshold.
-    let activeSessionSummary = sessionSummaryData.summary || undefined;
+    // ── Fallback budget for history ─────────────────────────────────
+    // Compute a conservative budget so buildFallbackContext can truncate
+    // older messages when the SDK can't resume by sdkSessionId.
+    const activeSessionSummary = sessionSummaryData.summary || undefined;
     let fallbackTokenBudget: number | undefined;
-    let compressionOccurred = false;
 
     try {
       const { estimateContextTokens } = await import('@/lib/context-estimator');
       const { getContextWindow } = await import('@/lib/model-context');
-      const { needsCompression, compressConversation } = await import('@/lib/context-compressor');
-      const { updateSessionSummary } = await import('@/lib/db');
-
-      const modelForWindow = resolved.upstreamModel || resolved.model || effectiveModel || 'sonnet';
+      const modelForWindow = effectiveModel || 'sonnet';
       const contextWindow = getContextWindow(modelForWindow, { context1m: context_1m }) || 200000;
-
-      // Estimate using normalized content (matches what buildFallbackContext actually sends).
-      // Raw transcript overestimates tool-heavy conversations because normalize + microcompact
-      // strip metadata and truncate old tool results significantly.
-      const { normalizeMessageContent, microCompactMessage } = await import('@/lib/message-normalizer');
-      const { roughTokenEstimate } = await import('@/lib/context-estimator');
-      const normalizedHistory = historyMsgs.map((m, i) => ({
-        role: m.role,
-        content: microCompactMessage(m.role, normalizeMessageContent(m.role, m.content), historyMsgs.length - 1 - i),
-      }));
-
       const estimate = estimateContextTokens({
         systemPrompt: finalSystemPrompt,
-        history: normalizedHistory,
+        history: historyMsgs,
         currentUserMessage: content,
         sessionSummary: activeSessionSummary,
       });
-
-      // Budget for history = 70% of window minus system prompt, summary, and current user message.
-      // buildFallbackContext adds summary + prompt on top of the history, so we must account for them.
       fallbackTokenBudget = Math.floor(
         contextWindow * 0.7 - estimate.breakdown.system - estimate.breakdown.summary - estimate.breakdown.userMessage
       );
-
-      if (needsCompression(estimate.total, contextWindow, session_id)) {
-        console.log(`[chat API] Context at ${((estimate.total / contextWindow) * 100).toFixed(1)}% — triggering compression`);
-
-        // Determine which messages to compress using normalized sizes (consistent with estimate)
-        const recentBudget = Math.floor(contextWindow * 0.5);
-        const messagesToKeep: typeof historyMsgs = [];
-        let keptTokens = 0;
-        for (let i = normalizedHistory.length - 1; i >= 0; i--) {
-          const msgTokens = roughTokenEstimate(normalizedHistory[i].content) + 10;
-          if (keptTokens + msgTokens > recentBudget) break;
-          messagesToKeep.unshift(historyMsgs[i]); // Keep raw msg for compression input
-          keptTokens += msgTokens;
-        }
-        const messagesToCompress = historyMsgs.slice(0, historyMsgs.length - messagesToKeep.length);
-
-        if (messagesToCompress.length > 0) {
-          try {
-            const result = await compressConversation({
-              sessionId: session_id,
-              messages: messagesToCompress,
-              existingSummary: activeSessionSummary,
-              providerId: effectiveProviderId || undefined,
-              sessionModel: effectiveModel || undefined,
-            });
-            activeSessionSummary = result.summary;
-            updateSessionSummary(session_id, result.summary);
-            // Recalculate budget with new (larger) summary
-            const newSummaryTokens = roughTokenEstimate(result.summary);
-            const userMsgTokens = roughTokenEstimate(content);
-            fallbackTokenBudget = Math.floor(
-              contextWindow * 0.7 - estimate.breakdown.system - newSummaryTokens - userMsgTokens
-            );
-            // Flag so we can notify frontend via a leading SSE event
-            compressionOccurred = true;
-            console.log(`[chat API] Compressed ${result.messagesCompressed} messages, saved ~${result.estimatedTokensSaved} tokens`);
-          } catch (compErr) {
-            console.warn('[chat API] Compression failed, proceeding without:', compErr);
-          }
-        }
-      }
     } catch (estimateErr) {
-      console.warn('[chat API] Context estimation failed, proceeding without compression:', estimateErr);
+      console.warn('[chat API] Context estimation failed, proceeding without budget:', estimateErr);
     }
 
     // Stream Claude response, using SDK session ID for resume if available
@@ -337,7 +213,7 @@ export async function POST(request: NextRequest) {
       prompt: content,
       sessionId: session_id,
       sdkSessionId: session.sdk_session_id || undefined,
-      model: resolved.upstreamModel || resolved.model || effectiveModel,
+      model: effectiveModel,
       systemPrompt: finalSystemPrompt,
       workingDirectory: session.sdk_cwd || session.working_directory || undefined,
       abortController,
@@ -345,9 +221,6 @@ export async function POST(request: NextRequest) {
       files: fileAttachments,
       imageAgentMode: isImageAgentMode,
       toolTimeoutSeconds: toolTimeout || 300,
-      provider: resolvedProvider,
-      providerId: effectiveProviderId || undefined,
-      sessionProviderId: session.provider_id || undefined,
       mcpServers,
       conversationHistory: historyMsgs,
       sessionSummary: activeSessionSummary,
@@ -380,26 +253,7 @@ export async function POST(request: NextRequest) {
       setSessionRuntimeStatus(session_id, 'idle');
     }, { isHeartbeatTurn, suppressNotifications: !!autoTrigger });
 
-    // If auto-compression happened, prepend a notification event to the stream
-    const responseStream = compressionOccurred
-      ? new ReadableStream<string>({
-          async start(controller) {
-            controller.enqueue(`data: ${JSON.stringify({ type: 'status', data: JSON.stringify({ notification: true, message: 'context_compressed' }) })}\n\n`);
-            const reader = streamForClient.getReader();
-            try {
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                controller.enqueue(value);
-              }
-            } finally {
-              controller.close();
-            }
-          },
-        })
-      : streamForClient;
-
-    return new Response(responseStream, {
+    return new Response(streamForClient, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -547,16 +401,6 @@ async function collectStreamResponse(
               } catch {
                 // skip malformed status data
               }
-            } else if (event.type === 'task_update') {
-              // Sync SDK TodoWrite tasks to local DB
-              try {
-                const taskData = JSON.parse(event.data);
-                if (taskData.session_id && taskData.todos) {
-                  syncSdkTasks(taskData.session_id, taskData.todos);
-                }
-              } catch {
-                // skip malformed task_update data
-              }
             } else if (event.type === 'error') {
               hasError = true;
               errorMessage = event.data || 'Unknown error';
@@ -662,25 +506,12 @@ async function collectStreamResponse(
       }
     }
   } finally {
-    // ── Server-side completion detection (reliable path) ──
-    // After persisting the assistant message, check for onboarding/checkin
-    // fences and process them directly on the server. This ensures completion
-    // is captured even if the frontend misses it (page refresh, parse failure, etc.).
+    // ── Heartbeat / memory state updates ──
     try {
       const fullText = contentBlocks
         .filter((b): b is Extract<MessageContentBlock, { type: 'text' }> => b.type === 'text')
         .map((b) => b.text)
         .join('');
-
-      // 1. Check for onboarding-complete fence
-      const completion = extractCompletion(fullText);
-      if (completion) {
-        const workspacePath = getSetting('assistant_workspace_path');
-        const session = getSession(sessionId);
-        if (workspacePath && session && session.working_directory === workspacePath) {
-          await processCompletionServerSide(completion, workspacePath, sessionId);
-        }
-      }
 
       // 2a. Soft heartbeat: for normal turns in assistant projects, mark heartbeat done
       // only if the AI's response actually mentions heartbeat-related content.
@@ -744,45 +575,7 @@ async function collectStreamResponse(
         }
       }
     } catch (e) {
-      console.error('[chat API] Server-side completion detection failed:', e);
-    }
-
-    // Memory extraction: auto-extract durable memories every N turns (assistant projects only)
-    if (!opts?.isHeartbeatTurn && !opts?.suppressNotifications) {
-      try {
-        const workspacePath = getSetting('assistant_workspace_path');
-        const session = getSession(sessionId);
-        if (workspacePath && session && session.working_directory === workspacePath) {
-          const { shouldExtractMemory, hasMemoryWritesInResponse, extractMemories } = await import('@/lib/memory-extractor');
-
-          const fullTextForMemory = contentBlocks
-            .filter((b): b is Extract<MessageContentBlock, { type: 'text' }> => b.type === 'text')
-            .map((b) => b.text)
-            .join('');
-
-          // For memory-write detection, serialize ALL blocks (including tool_use/tool_result)
-          // so that hasMemoryWritesInResponse can see memory file paths in tool calls.
-          const fullResponseForWriteCheck = JSON.stringify(contentBlocks);
-
-          // Load buddy rarity for extraction interval
-          let buddyRarity: string | undefined;
-          try {
-            const { loadState } = await import('@/lib/assistant-workspace');
-            const st = loadState(workspacePath);
-            buddyRarity = st.buddy?.rarity;
-          } catch { /* ignore */ }
-
-          // Only extract if: interval met + AI didn't already write memory this turn
-          if (shouldExtractMemory(buddyRarity, sessionId) && !hasMemoryWritesInResponse(fullResponseForWriteCheck)) {
-            const { getMessages: getMsgs } = await import('@/lib/db');
-            const { messages: recent } = getMsgs(sessionId, { limit: 6, excludeHeartbeatAck: true });
-            const recentForExtraction = recent.map(m => ({ role: m.role, content: m.content }));
-
-            // Fire-and-forget: don't block the response
-            extractMemories(recentForExtraction, workspacePath).catch(() => {});
-          }
-        }
-      } catch { /* best effort */ }
+      console.error('[chat API] Heartbeat state update failed:', e);
     }
 
     // Telegram notifications: completion or error (fire-and-forget)
@@ -800,54 +593,5 @@ async function collectStreamResponse(
       }
     }
     onComplete?.();
-  }
-}
-
-/**
- * Process a detected onboarding/checkin completion on the server side.
- * Calls the shared processor functions directly — no HTTP round-trip needed.
- *
- * Both processors are internally idempotent:
- * - processOnboarding checks state.onboardingComplete
- * - processCheckin checks state.lastCheckInDate === today
- */
-async function processCompletionServerSide(
-  completion: import('@/lib/onboarding-completion').ExtractedCompletion,
-  _workspacePath: string,
-  sessionId: string,
-): Promise<void> {
-  try {
-    if (completion.type === 'onboarding') {
-      const { processOnboarding } = await import('@/lib/onboarding-processor');
-      console.log('[chat API] Server-side onboarding completion detected');
-      await processOnboarding(completion.answers, sessionId);
-      console.log('[chat API] Server-side onboarding completion succeeded');
-    } else if (completion.type === 'checkin') {
-      const { processCheckin } = await import('@/lib/checkin-processor');
-      console.log('[chat API] Server-side checkin completion detected');
-      await processCheckin(completion.answers, sessionId);
-      console.log('[chat API] Server-side checkin completion succeeded');
-    }
-
-    // Clear hookTriggeredSessionId directly (no HTTP needed).
-    // CAS: only clear if we are still the owner — prevents wiping another
-    // tab's legitimate lock when completions arrive out of order.
-    try {
-      const { loadState, saveState } = await import('@/lib/assistant-workspace');
-      const { getSetting: getSettingDirect } = await import('@/lib/db');
-      const wsPath = getSettingDirect('assistant_workspace_path');
-      if (wsPath) {
-        const state = loadState(wsPath);
-        if (state.hookTriggeredSessionId === sessionId || !state.hookTriggeredSessionId) {
-          state.hookTriggeredSessionId = undefined;
-          state.hookTriggeredAt = undefined;
-          saveState(wsPath, state);
-        }
-      }
-    } catch {
-      // Best effort
-    }
-  } catch (e) {
-    console.error(`[chat API] Server-side ${completion.type} processing failed:`, e);
   }
 }

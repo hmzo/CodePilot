@@ -279,7 +279,7 @@ export function CliSettingsSection() {
                 ) : (
                   <FloppyDisk size={16} />
                 )}
-                {saving ? t('provider.saving') : t('cli.save')}
+                {saving ? t('cli.saving') : t('cli.save')}
               </Button>
               <Button variant="outline" onClick={handleReset} disabled={!hasChanges} className="gap-2">
                 <ArrowClockwise size={16} />
@@ -314,7 +314,7 @@ export function CliSettingsSection() {
                 ) : (
                   <FloppyDisk size={16} />
                 )}
-                {saving ? t('provider.saving') : t('cli.save')}
+                {saving ? t('cli.saving') : t('cli.save')}
               </Button>
               <Button variant="outline" onClick={handleFormatJson} className="gap-2">
                 <Code size={16} />

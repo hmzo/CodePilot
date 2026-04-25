@@ -4,6 +4,16 @@
 > 执行计划见 [docs/exec-plans/active/memory-system-v3.md](../exec-plans/active/memory-system-v3.md)
 > 后续增强见 [docs/future/memory-enhancements.md](../future/memory-enhancements.md)
 > 助理体验升级见 [docs/future/assistant-ux-upgrade.md](../future/assistant-ux-upgrade.md)
+>
+> **2026-04-25 重要变更**：随 provider 子系统下线，下列实现已删除（详见 [exec-plans/active/remove-provider-system.md](../exec-plans/active/remove-provider-system.md)）：
+> - `src/lib/memory-search-mcp.ts`、`src/lib/memory-extractor.ts`（in-process MCP 注册逻辑也从 `claude-client.ts` 移除）
+> - `src/lib/onboarding-processor.ts`、`src/lib/checkin-processor.ts`、`src/lib/text-generator.ts`
+> - `POST /api/workspace/{onboarding,checkin,quick-actions}` 路由
+> - `OnboardingCard` / `CheckInCard` / `QuickActions` 组件
+>
+> 保留：助理工作区目录结构（`soul.md` / `user.md` / `claude.md` / `memory.md` / `heartbeat.md`）、文件树展示、Telegram 静默规则。
+> 当前 CodePilot 把"读记忆 / 写记忆"完全交给 Claude Code 自带的 `Read`/`Edit`/`Grep` 工具，模型直接对 `~/.codepilot/workspace/memory.md` 等文件操作。
+> 下文余下内容反映 V3 + V3.1 实施时点的设计快照，作为历史决策保留。
 
 ## 概述
 

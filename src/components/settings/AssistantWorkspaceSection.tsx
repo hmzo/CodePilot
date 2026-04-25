@@ -2,18 +2,14 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { getLocalDateString } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SpinnerGap, CheckCircle, X, Trash } from "@/components/ui/icon";
+import { SpinnerGap, CheckCircle, X } from "@/components/ui/icon";
 import { useTranslation } from "@/hooks/useTranslation";
-import type { WorkspaceInspectResult, ScheduledTask } from "@/types";
+import type { WorkspaceInspectResult } from "@/types";
 import { FilesTabPanel, TaxonomyTabPanel, IndexTabPanel, OrganizeTabPanel } from "./WorkspaceTabPanels";
 import { WorkspaceConfirmDialogs, type ConfirmDialogType } from "./WorkspaceConfirmDialogs";
-import { OnboardingCard, CheckInCard } from "./WorkspaceStatusCards";
-import { OnboardingWizard } from "@/components/assistant/OnboardingWizard";
-import { AssistantAvatar } from "@/components/ui/AssistantAvatar";
-import type { TranslationKey } from "@/i18n/en";
+import { SELECTED_MODEL_STORAGE_KEY } from "@/lib/anthropic-models";
 import type { TaxonomyCategoryInfo, IndexStats, WorkspaceInfo, TabId, PathValidationStatus } from "./workspace-types";
 
 interface WorkspaceSummary {
@@ -48,9 +44,7 @@ export function AssistantWorkspaceSection() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogType | null>(null);
   const [inspecting, setInspecting] = useState(false);
-  const [showWizard, setShowWizard] = useState(false);
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
-  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const fetchWorkspace = useCallback(async () => {
@@ -74,16 +68,6 @@ export function AssistantWorkspaceSection() {
       if (res.ok) {
         const data = await res.json();
         setSummary(data);
-      }
-    } catch { /* ignore */ }
-  }, []);
-
-  const fetchTasks = useCallback(async () => {
-    try {
-      const res = await fetch("/api/tasks/list");
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data.tasks || []);
       }
     } catch { /* ignore */ }
   }, []);
@@ -115,9 +99,8 @@ export function AssistantWorkspaceSection() {
   useEffect(() => {
     if (workspace?.path && workspace.valid !== false) {
       fetchSummary();
-      fetchTasks();
     }
-  }, [workspace?.path, workspace?.valid, fetchSummary, fetchTasks]);
+  }, [workspace?.path, workspace?.valid, fetchSummary]);
 
   useEffect(() => {
     if (workspace?.path && activeTab === 'taxonomy') fetchTaxonomy();
@@ -201,13 +184,11 @@ export function AssistantWorkspaceSection() {
         }
 
         try {
-          const model = typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') || '' : '';
-          const provider_id = typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-provider-id') || '' : '';
-          const sessionMode = navigateMode === 'reuse' ? 'checkin' : 'onboarding';
+          const model = typeof window !== 'undefined' ? localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) || '' : '';
           const sessionRes = await fetch("/api/workspace/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: sessionMode, model, provider_id }),
+            body: JSON.stringify({ forceNew: navigateMode === 'new', model }),
           });
           if (sessionRes.ok) {
             const sessionData = await sessionRes.json();
@@ -321,13 +302,6 @@ export function AssistantWorkspaceSection() {
     }
   }, []);
 
-  const handleStartOnboarding = useCallback(() => {
-    if (workspace?.path) {
-      setShowWizard(true);
-    }
-  }, [workspace?.path]);
-  // handleStartCheckIn removed — heartbeat triggers automatically on session open
-
   const handleReindex = useCallback(async () => {
     setReindexing(true);
     try {
@@ -355,17 +329,6 @@ export function AssistantWorkspaceSection() {
     }
   }, []);
 
-  const handleDeleteTask = useCallback(async (taskId: string) => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
-      if (res.ok) {
-        setTasks((prev) => prev.filter((t) => t.id !== taskId));
-      }
-    } catch (e) {
-      console.error("Failed to delete task:", e);
-    }
-  }, []);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -373,9 +336,6 @@ export function AssistantWorkspaceSection() {
       </div>
     );
   }
-
-  const today = getLocalDateString();
-  const checkInDoneToday = workspace?.state?.lastHeartbeatDate === today;
 
   const defaultTab: { id: TabId; label: string } = { id: 'files', label: t('assistant.fileStatus') };
   const advancedTabs: Array<{ id: TabId; label: string }> = [
@@ -462,15 +422,6 @@ export function AssistantWorkspaceSection() {
         </div>
       )}
 
-      {/* Onboarding Status Card */}
-      {workspace?.path && workspace.valid !== false && (
-        <OnboardingCard
-          onboardingComplete={!!workspace.state?.onboardingComplete}
-          creatingSession={false}
-          onStartOnboarding={handleStartOnboarding}
-        />
-      )}
-
       {/* Personality / Buddy Preview */}
       {workspace?.path && workspace.valid !== false && summary?.configured && (
         <div className="rounded-lg border border-border/50 p-4">
@@ -509,73 +460,6 @@ export function AssistantWorkspaceSection() {
           <p className="text-[11px] text-muted-foreground mt-2">
             {t('assistant.editSoulHint')}
           </p>
-        </div>
-      )}
-
-      {/* Daily Check-in Card */}
-      {workspace?.path && workspace.valid !== false && workspace.state?.onboardingComplete && (
-        <CheckInCard
-          lastCheckInDate={workspace.state?.lastHeartbeatDate ?? null}
-          checkInDoneToday={checkInDoneToday}
-          autoTriggerEnabled={workspace.state?.heartbeatEnabled === true}
-          onAutoTriggerChange={async (enabled) => {
-            try {
-              const res = await fetch('/api/settings/workspace', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ heartbeatEnabled: enabled }),
-              });
-              if (!res.ok) return; // don't flip UI on failure
-              setWorkspace((prev) => prev && prev.state ? {
-                ...prev,
-                state: { ...prev.state, heartbeatEnabled: enabled },
-              } : prev);
-            } catch { /* network error — leave UI unchanged */ }
-          }}
-        />
-      )}
-
-      {/* Scheduled Tasks */}
-      {workspace?.path && workspace.valid !== false && (
-        <div className="rounded-lg border border-border/50 p-4">
-          <h2 className="text-sm font-medium mb-2">{t('assistant.scheduledTasks')}</h2>
-          {tasks.length === 0 ? (
-            <p className="text-xs text-muted-foreground">{t('assistant.noTasks')}</p>
-          ) : (
-            <div className="space-y-2">
-              {tasks.map((task) => (
-                <div key={task.id} className="flex items-center justify-between text-xs border border-border/30 rounded px-3 py-2">
-                  <div className="flex-1 min-w-0">
-                    <span className="font-medium truncate block">{task.name}</span>
-                    <span className="text-muted-foreground">
-                      {task.schedule_value}
-                      {task.next_run && (
-                        <> &middot; {t('assistant.taskNextRun')}: {new Date(task.next_run).toLocaleString()}</>
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 ml-2 shrink-0">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                      task.status === 'active' ? 'bg-status-success-muted text-status-success-foreground' :
-                      task.status === 'paused' ? 'bg-status-warning-muted text-status-warning-foreground' :
-                      'bg-muted text-muted-foreground'
-                    }`}>
-                      {task.status}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto p-1 text-muted-foreground hover:text-status-error-foreground"
-                      onClick={() => handleDeleteTask(task.id)}
-                      title={t('assistant.taskDelete')}
-                    >
-                      <Trash size={14} />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
@@ -656,18 +540,6 @@ export function AssistantWorkspaceSection() {
         onClose={() => setConfirmDialog(null)}
         onExecuteSave={executeSave}
       />
-
-      {/* Onboarding Wizard Overlay */}
-      {showWizard && workspace?.path && (
-        <OnboardingWizard
-          workspacePath={workspace.path}
-          onComplete={(session) => {
-            setShowWizard(false);
-            fetchWorkspace(); // reload workspace state
-            router.push(`/chat/${session.id}`);
-          }}
-        />
-      )}
     </div>
   );
 }

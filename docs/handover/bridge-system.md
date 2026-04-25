@@ -1,5 +1,8 @@
 # 多 IM 远程会话桥接系统
 
+> 2026-04-25 调整：随 provider 子系统下线，`bridge_default_provider_id` 配置删除，Bridge 模型设置降级为单一文本输入。
+> 产品思考见 [docs/insights/remove-provider.md](../insights/remove-provider.md)
+
 ## 核心思路
 
 让用户通过 Telegram、Discord、飞书、微信等 IM 通道远程操控 CodePilot 中的 Claude 会话。Bridge 复用现有 `streamClaude()` 管线，在服务端直接消费 SSE 流，而不是依赖浏览器标签页。
@@ -319,8 +322,7 @@ Bridge 绑定和 chat session 中可能残留已经删除的 `working_directory`
 | bridge_weixin_media_enabled | 微信入站媒体下载开关（默认 true；关闭后只收文本） |
 | bridge_auto_start | 服务启动时自动拉起桥接 |
 | bridge_default_work_dir | 新建会话默认工作目录 |
-| bridge_default_model | 新建会话默认模型 |
-| bridge_default_provider_id | 新建会话默认服务商（Bridge 系统独立设置，与全局默认模型的 `global_default_model_provider` 分离；Bridge 会话使用此值而非全局默认） |
+| bridge_default_model | 新建会话默认模型（Bridge 独立设置，文本输入；不再有 provider_id 概念，`~/.claude` 环境决定模型可用性） |
 | telegram_bridge_allowed_users | 白名单用户 ID（逗号分隔） |
 | bridge_telegram_image_enabled | Telegram 图片接收开关（默认 true，设为 false 关闭） |
 | bridge_telegram_max_image_size | 图片大小上限（字节，默认 20MB） |

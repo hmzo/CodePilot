@@ -12,8 +12,11 @@ import assert from 'node:assert/strict';
 
 // ─── Real imports from source modules ────────────────────────────
 import { BUILT_IN_COMMANDS, COMMAND_PROMPTS } from '../../lib/constants/commands';
-import { DEFAULT_MODEL_OPTIONS } from '../../hooks/useProviderModels';
+import { BUILT_IN_MODELS } from '../../lib/anthropic-models';
 import type { CommandBadge, CliBadge, PopoverItem, PopoverMode, SkillKind } from '../../types';
+
+// Map BUILT_IN_MODELS to the legacy { value, label } shape used in this test
+const DEFAULT_MODEL_OPTIONS = BUILT_IN_MODELS.map((m) => ({ value: m.id, label: m.label }));
 
 // ─── Pure logic functions under test ─────────────────────────────
 import {
@@ -383,16 +386,16 @@ describe('Badge removal via keyboard', () => {
 
 // --- 3. Model Selector (using real DEFAULT_MODEL_OPTIONS) ------------
 
-describe('Model selector option lookup (real DEFAULT_MODEL_OPTIONS)', () => {
-  it('DEFAULT_MODEL_OPTIONS contains expected models', () => {
-    const values = DEFAULT_MODEL_OPTIONS.map((m) => m.value);
-    assert.ok(values.includes('sonnet'), 'should include sonnet');
-    assert.ok(values.includes('opus'), 'should include opus');
-    assert.ok(values.includes('haiku'), 'should include haiku');
+describe('Model selector option lookup (real BUILT_IN_MODELS)', () => {
+  it('BUILT_IN_MODELS contains expected tiers', () => {
+    const tiers = BUILT_IN_MODELS.map((m) => m.tier);
+    assert.ok(tiers.includes('flagship'), 'should include flagship');
+    assert.ok(tiers.includes('balanced'), 'should include balanced');
+    assert.ok(tiers.includes('fast'), 'should include fast');
   });
 
-  it('finds matching model option', () => {
-    const current = DEFAULT_MODEL_OPTIONS.find((m) => m.value === 'opus');
+  it('finds matching model by id', () => {
+    const current = BUILT_IN_MODELS.find((m) => m.tier === 'flagship');
     assert.ok(current);
     assert.ok(current.label.length > 0);
   });
@@ -402,10 +405,11 @@ describe('Model selector option lookup (real DEFAULT_MODEL_OPTIONS)', () => {
     assert.equal(current.value, DEFAULT_MODEL_OPTIONS[0].value);
   });
 
-  it('default model is sonnet when modelName is empty', () => {
+  it('default model is the balanced one when modelName is empty', () => {
     const modelName = '';
-    const currentModelValue = modelName || 'sonnet';
-    assert.equal(currentModelValue, 'sonnet');
+    const balanced = BUILT_IN_MODELS.find((m) => m.tier === 'balanced')!;
+    const currentModelValue = modelName || balanced.id;
+    assert.equal(currentModelValue, balanced.id);
   });
 
   it('default model is sonnet when modelName is undefined', () => {

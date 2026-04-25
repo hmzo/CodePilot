@@ -21,11 +21,9 @@ import {
   setSessionRuntimeStatus,
   updateSdkSessionId,
   updateSessionModel,
-  syncSdkTasks,
   getSession,
   getSetting,
 } from '../db';
-import { resolveProvider as resolveProviderUnified } from '../provider-resolver';
 import { loadCodePilotMcpServers } from '../mcp-loader';
 import { assembleContext } from '../context-assembler';
 import crypto from 'crypto';
@@ -153,16 +151,9 @@ export async function processMessage(
     }
     addMessage(sessionId, 'user', savedContent);
 
-    // Resolve provider via unified resolver (same logic as desktop chat route)
-    const resolved = resolveProviderUnified({
-      sessionProviderId: session?.provider_id || undefined,
-      model: binding.model || undefined,
-      sessionModel: session?.model || undefined,
-    });
-    const resolvedProvider = resolved.provider;
-
-    // Use upstream model from unified resolver (same chain as chat route)
-    const effectiveModel = resolved.upstreamModel || resolved.model || binding.model || session?.model || getSetting('default_model') || undefined;
+    // Resolve effective model — request override > binding > session > default setting.
+    // Provider system removed: SDK reads ~/.claude credentials directly.
+    const effectiveModel = binding.model || session?.model || getSetting('default_model') || undefined;
 
     // Permission mode from binding mode
     let permissionMode: string;
@@ -229,8 +220,6 @@ export async function processMessage(
       workingDirectory: effectiveCwd,
       abortController,
       permissionMode,
-      provider: resolvedProvider,
-      sessionProviderId: session?.provider_id || undefined,
       mcpServers,
       conversationHistory: historyMsgs,
       files,
@@ -392,16 +381,6 @@ async function consumeStream(
               }
               if (statusData.model) {
                 updateSessionModel(sessionId, statusData.model);
-              }
-            } catch { /* skip */ }
-            break;
-          }
-
-          case 'task_update': {
-            try {
-              const taskData = JSON.parse(event.data);
-              if (taskData.session_id && taskData.todos) {
-                syncSdkTasks(taskData.session_id, taskData.todos);
               }
             } catch { /* skip */ }
             break;

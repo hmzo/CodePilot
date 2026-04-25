@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { deleteSession, getSession, updateSessionWorkingDirectory, updateSessionTitle, updateSessionMode, updateSessionModel, updateSessionProviderId, clearSessionMessages, updateSdkSessionId, updateSessionPermissionProfile } from '@/lib/db';
+import { deleteSession, getSession, updateSessionWorkingDirectory, updateSessionTitle, updateSessionMode, updateSessionModel, clearSessionMessages, updateSdkSessionId, updateSessionPermissionProfile } from '@/lib/db';
 import { autoApprovePendingForSession } from '@/lib/bridge/permission-broker';
 
 export async function GET(
@@ -41,31 +41,27 @@ export async function PATCH(
     if (body.mode) {
       updateSessionMode(id, body.mode);
     }
-    // Track whether provider or model actually changed — if so, the old
-    // sdk_session_id is stale and must be cleared to prevent resume failures
-    // against a different provider/model (fixes #343, #346).
+    // Track whether model actually changed — if so, the old sdk_session_id
+    // is stale and must be cleared to prevent resume failures against a
+    // different model.
     const modelChanged = body.model !== undefined && body.model !== session.model;
-    const providerChanged = body.provider_id !== undefined && body.provider_id !== session.provider_id;
 
     if (body.model !== undefined) {
       updateSessionModel(id, body.model);
-    }
-    if (body.provider_id !== undefined) {
-      updateSessionProviderId(id, body.provider_id);
     }
     if (body.sdk_session_id !== undefined) {
       updateSdkSessionId(id, body.sdk_session_id);
     }
 
-    // Server-side guard: when provider or model changed and the caller didn't
-    // explicitly set sdk_session_id in the same request, force-clear it so the
-    // next chat message starts a fresh SDK session instead of trying to resume
-    // the old one (which would fail with a different provider/model).
-    if ((modelChanged || providerChanged) && body.sdk_session_id === undefined) {
+    // Server-side guard: when model changed and the caller didn't explicitly
+    // set sdk_session_id in the same request, force-clear it so the next chat
+    // message starts a fresh SDK session instead of trying to resume the old
+    // one (which would fail with a different model).
+    if (modelChanged && body.sdk_session_id === undefined) {
       if (session.sdk_session_id) {
         console.log(
-          `[session-api] Provider/model changed for session ${id}, clearing stale sdk_session_id`,
-          { modelChanged, providerChanged, oldSdkSessionId: session.sdk_session_id.slice(0, 8) + '...' }
+          `[session-api] Model changed for session ${id}, clearing stale sdk_session_id`,
+          { oldSdkSessionId: session.sdk_session_id.slice(0, 8) + '...' }
         );
       }
       updateSdkSessionId(id, '');

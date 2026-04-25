@@ -7,7 +7,7 @@
  * - urgent: Toast + Electron system notification + Telegram (if configured)
  *
  * In-app delivery: notifications are queued in a server-side ring buffer.
- * The frontend polls GET /api/tasks/notify to drain the queue and show toasts.
+ * The frontend polls GET /api/notifications to drain the queue and show toasts.
  */
 
 // ── Server-side notification queue (survives HMR via globalThis) ────

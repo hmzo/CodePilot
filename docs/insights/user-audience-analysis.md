@@ -3,6 +3,13 @@
 > 数据采集日期：2026-04-04
 > 数据来源：GitHub Issues (324)、PRs (104)、Release 下载量、互联网公开讨论
 > 本文无对应技术交接文档，属于纯产品/品牌研究
+>
+> **2026-04-25 重要变更**：本文中关于"多 Provider 是核心差异化"的结论已不再适用。
+> 经过对 GitHub issue 数据的复盘——很多 issue 都源于第三方 provider 的兼容性问题（API 不一致、`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` 覆盖逻辑、preset 错配等）——团队决定彻底删除 provider 子系统，
+> 让 CodePilot 退化为"包了 GUI 的 `claude` CLI"，所有凭据/base_url/默认模型完全交给 `~/.claude/settings.json` 决定。
+> 若用户想用 OpenRouter / Volcengine / Bedrock 等转发服务，按 Anthropic 兼容协议配进 `~/.claude` 即可。
+> 详见 [docs/exec-plans/active/remove-provider-system.md](../exec-plans/active/remove-provider-system.md)。
+> 下文 4.2 节"差异化定位"、4.3 节"产品发展方向"、第三节"服务商支持现状"等内容仅作为历史快照保留，反映 2026-04-04 时点的认知。
 
 ---
 

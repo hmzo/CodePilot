@@ -132,14 +132,7 @@ export function WorkspaceConfirmDialogs({
                 {confirmDialog?.kind === 'existing_workspace' && (
                   <div className="rounded border border-border/50 p-3 space-y-1 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">{t('assistant.summaryOnboarding')}:</span>
-                      <span>{confirmDialog.summary.onboardingComplete
-                        ? t('assistant.onboardingComplete')
-                        : t('assistant.onboardingNotStarted')
-                      }</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">{t('assistant.summaryLastCheckIn')}:</span>
+                      <span className="text-muted-foreground">{t('assistant.summaryLastHeartbeat')}:</span>
                       <span>{confirmDialog.summary.lastHeartbeatDate || t('assistant.summaryNever')}</span>
                     </div>
                     <div className="flex justify-between">

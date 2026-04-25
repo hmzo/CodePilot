@@ -19,7 +19,6 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionModel, setSessionModel] = useState<string>('');
-  const [sessionProviderId, setSessionProviderId] = useState<string>('');
   const [sessionInfoLoaded, setSessionInfoLoaded] = useState(false);
   const [sessionPermissionProfile, setSessionPermissionProfile] = useState<'default' | 'full_access'>('default');
   const [sessionMode, setSessionMode] = useState<'code' | 'plan'>('code');
@@ -34,7 +33,6 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     // Clear stale state immediately so ChatView doesn't inherit previous session's values
     setWorkingDirectory('');
     setSessionModel('');
-    setSessionProviderId('');
     setSessionInfoLoaded(false);
 
     async function loadSession() {
@@ -53,13 +51,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           const title = data.session.title || t('chat.newConversation');
           setPanelSessionTitle(title);
 
-          // Resolve model: session → global default → provider's first → localStorage → 'sonnet'
-          const { resolveSessionModel } = await import('@/lib/resolve-session-model');
+          // Use session model directly; if missing, fall back to localStorage / hardcoded default
+          const { DEFAULT_MODEL_ID, SELECTED_MODEL_STORAGE_KEY } = await import('@/lib/anthropic-models');
           if (cancelled) return;
-          const resolved = await resolveSessionModel(data.session.model || '', data.session.provider_id || '');
-          if (cancelled) return;
-          setSessionModel(resolved.model);
-          setSessionProviderId(resolved.providerId);
+          const fallback = (typeof window !== 'undefined' ? localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) : null) || DEFAULT_MODEL_ID;
+          setSessionModel(data.session.model || fallback);
           setSessionPermissionProfile(data.session.permission_profile || 'default');
           setSessionMode((data.session.mode as 'code' | 'plan') || 'code');
           setSessionHasSummary(!!data.session.context_summary);
@@ -171,7 +167,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ChatView key={id} sessionId={id} initialMessages={messages} initialHasMore={hasMore} modelName={sessionModel} providerId={sessionProviderId} initialPermissionProfile={sessionPermissionProfile} initialMode={sessionMode} initialHasSummary={sessionHasSummary} />
+      <ChatView key={id} sessionId={id} initialMessages={messages} initialHasMore={hasMore} modelName={sessionModel} initialPermissionProfile={sessionPermissionProfile} initialMode={sessionMode} initialHasSummary={sessionHasSummary} />
     </div>
   );
 }

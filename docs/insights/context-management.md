@@ -1,6 +1,8 @@
 # 上下文管理系统 — 产品思考
 
 > 技术实现见 [docs/handover/context-management.md](../handover/context-management.md)
+>
+> **2026-04-25 重要变更**：随 provider 子系统下线（[remove-provider-system.md](../exec-plans/active/remove-provider-system.md)），CodePilot 自带的 LLM 压缩链路（`context-compressor.ts` + PTL reactive compact）一并删除。压缩职能完全交给 Claude Code 内置的 `/compact` 命令；CodePilot 只保留"前置 token 预估 + 消息归一化 + summary 注入"。下文中关于"压缩器策略选择"、"分级压缩"、"@ai-sdk/anthropic vs SDK subprocess"等设计论证作为历史决策保留，反映了我们在尝试自管压缩链路时学到的教训——这也是后来决定整体下线的原因之一。
 
 ## 解决了什么问题
 

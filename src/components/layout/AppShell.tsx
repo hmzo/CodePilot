@@ -74,7 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const [chatListOpenRaw, setChatListOpenRaw] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
-  const [setupInitialCard, setSetupInitialCard] = useState<'claude' | 'provider' | 'project' | undefined>();
+  const [setupInitialCard, setSetupInitialCard] = useState<'claude' | 'project' | undefined>();
 
   // Poll server-side notification queue and display as toasts
   useNotificationPoll();

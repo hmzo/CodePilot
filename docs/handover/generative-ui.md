@@ -119,7 +119,7 @@ CodePilot 使用 Claude Agent SDK 的 preset 模式，无法注册自定义 tool
 
 ## 已知限制
 
-1. **第三方 API Provider**：部分三方 provider 不处理 SDK 的 `appendSystemPrompt` 字段，模型收不到 widget 指令 → 退化为纯文本。必须使用官方 API。
+1. **第三方 API 网关兼容性**：如果 `~/.claude/settings.json` 把 `ANTHROPIC_BASE_URL` 改到第三方网关，部分网关不会原样转发 SDK 的 `appendSystemPrompt` 字段，模型收不到 widget 指令 → 退化为纯文本。建议使用 Anthropic 官方 API。
 2. **Widget 大小限制**：system prompt 建议每个 widget ≤ 3000 chars，但不强制。过大的 widget 可能导致流式体验下降。
 3. **CDN 脚本加载**：Chart.js 等 CDN 库需要网络加载，首次可能较慢。有 shimmer overlay 缓解感知等待。
 4. **高度缓存 key**：使用 widgetCode 前 200 字符作为 key，极端情况下可能碰撞（概率极低）。

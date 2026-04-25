@@ -15,4 +15,5 @@
 | [cli-upgrade-proxy.md](./cli-upgrade-proxy.md) | [handover/cli-upgrade-proxy.md](../handover/cli-upgrade-proxy.md) | CLI 升级 + 代理透传：P0 版本问题、分渠道升级策略、系统代理无感透传、Git 依赖引导 |
 | [tool-call-ux.md](./tool-call-ux.md) | [handover/tool-call-ux.md](../handover/tool-call-ux.md) | 工具调用 UX：thinking 展示设计决策、注册表 vs if/else、归组阈值、缓冲旁路、竞品对比 |
 | [performance-memory.md](./performance-memory.md) | [handover/performance-memory.md](../handover/performance-memory.md) | 内存优化：LRU vs 定期清理、300 条上限 + reconciliation、定时器泄漏、大文件流式读取 |
-| [user-audience-analysis.md](./user-audience-analysis.md) | [handover/provider-architecture.md](../handover/provider-architecture.md) | 用户受众分析：画像、需求优先级、竞品格局、品牌定位路线取舍（2026-04-04 数据快照） |
+| [user-audience-analysis.md](./user-audience-analysis.md) | — | 用户受众分析：画像、需求优先级、竞品格局、品牌定位路线取舍（2026-04-04 数据快照；原对应 handover/provider-architecture.md 已随 provider 子系统下线删除） |
+| [remove-provider.md](./remove-provider.md) | [handover/onboarding-setup-center.md](../handover/onboarding-setup-center.md) / [handover/bridge-system.md](../handover/bridge-system.md) / [handover/context-management.md](../handover/context-management.md) | 移除 Provider 子系统：为什么把 CodePilot 退化为 Claude Code GUI 客户端、模型选择器/Bridge/辅助 AI 功能取舍、对升级用户与新用户的影响 |

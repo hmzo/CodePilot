@@ -22,19 +22,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { mode } = body as { mode?: 'onboarding' | 'checkin' };
+    const forceNew = body?.forceNew === true;
 
-    // For onboarding: always create new session
-    // For checkin: reuse latest session if exists
-    let session;
-    if (mode === 'checkin') {
-      session = getLatestSessionByWorkingDirectory(workspacePath);
-    }
-
+    let session = forceNew ? null : getLatestSessionByWorkingDirectory(workspacePath);
     if (!session) {
       const model = typeof body.model === 'string' ? body.model : '';
-      const provider_id = typeof body.provider_id === 'string' ? body.provider_id : '';
-      session = createSession(undefined, model, undefined, workspacePath, 'code', provider_id);
+      session = createSession(undefined, model, undefined, workspacePath, 'code');
     }
 
     return NextResponse.json({ session, isNew: !session.sdk_session_id });

@@ -1,8 +1,10 @@
-# 定时任务 + 通知系统
+# 定时任务 + 通知系统（已废弃）
 
 > 创建时间：2026-03-31
+> 关闭时间：2026-04-25
 > 关联：[docs/future/scheduled-tasks-and-notifications.md](../../future/scheduled-tasks-and-notifications.md)
-> 心跳边界：[docs/exec-plans/active/memory-system-v3.md](memory-system-v3.md)
+> 心跳边界：[docs/exec-plans/active/memory-system-v3.md](../active/memory-system-v3.md)
+> 关闭原因：随 provider 子系统下线（[remove-provider-system.md](./../active/remove-provider-system.md)），TaskScheduler / `tasks` / `scheduled_tasks` / `task_run_logs` 表 / `codepilot_schedule_task` 系列 MCP 工具 / `api/tasks` 路由 / `TaskList` UI 全部删除。Phase 1 的"通用通知 MCP"功能保留（仍服务于 buddy 系统），Phase 2-4 的调度器/UI 部分作废。如未来需要重建，应避免依赖已删除的 `text-generator.ts` 与 provider 配置。
 
 ## 状态
 

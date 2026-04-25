@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { X, ArrowClockwise, CaretUp, CaretDown, ChartBar, Trash, DownloadSimple, Heart, Brain, Clock, Check, Warning, Gear } from "@/components/ui/icon";
+import { X, ArrowClockwise, CaretUp, CaretDown, ChartBar, Trash, DownloadSimple, Heart, Brain, Check, Warning, Gear } from "@/components/ui/icon";
 import { showToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/button";
 import { usePanel } from "@/hooks/usePanel";
@@ -28,7 +28,6 @@ interface AssistantSummary {
   memoryCount: number;
   recentDailyDates?: string[];
   fileHealth?: Record<string, boolean>;
-  taskCount?: number;
   buddy?: BuddyData;
 }
 
@@ -597,11 +596,6 @@ function AssistantStatusCard({ summary, t }: {
           <Brain size={11} />
           <span>{t('assistant.panel.memories' as TranslationKey)}</span>
           <span className="text-foreground">{summary.memoryCount}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <Clock size={11} />
-          <span>{t('tasks.title' as TranslationKey)}</span>
-          <span className="text-foreground">{summary.taskCount || 0}</span>
         </div>
       </div>
 
