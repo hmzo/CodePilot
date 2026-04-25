@@ -1,7 +1,7 @@
 <img src="docs/icon-readme.png" width="32" height="32" alt="CodePilot" style="vertical-align: middle; margin-right: 8px;" /> CodePilot
 ===
 
-**A desktop GUI for Claude Code** -- runs on top of your existing `~/.claude` configuration, extends with MCP & skills, controls from your phone, and lets your assistant learn your workflow.
+**A desktop GUI for Claude Code** -- ships with Claude Code built in (no Node.js or separate install required), runs on top of your existing `~/.claude` configuration, extends with MCP & skills, controls from your phone, and lets your assistant learn your workflow.
 
 [![GitHub release](https://img.shields.io/github/v/release/op7418/CodePilot)](https://github.com/op7418/CodePilot/releases)
 [![Downloads](https://img.shields.io/github/downloads/op7418/CodePilot/total)](https://github.com/op7418/CodePilot/releases)
@@ -64,11 +64,10 @@ CodePilot started as a coding tool but has grown into a **general-purpose AI age
 
 ### Path A: Download a release (most users)
 
-1. Install the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview): `npm install -g @anthropic-ai/claude-code`
-2. Run `claude` once and complete login (or write your `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` manually)
-3. Download the CodePilot installer for your platform from the [Download](#download) section above
-4. Launch CodePilot — credentials are picked up automatically from `~/.claude`
-5. Pick a model in the chat composer and start a conversation
+1. Download the CodePilot installer for your platform from the [Download](#download) section above
+2. Launch CodePilot — Claude Code is bundled inside the installer, no Node.js required
+3. Sign in with your Anthropic account (or write `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` manually)
+4. Pick a model in the chat composer and start a conversation
 
 ### Path B: Build from source (developers)
 
@@ -131,7 +130,7 @@ npm run electron:dev     # full desktop app
 
 ## First Launch
 
-1. **Make sure `~/.claude` is configured** — install the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`) and either run `claude` once to log in, or write `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` manually.
+1. **Configure `~/.claude`** — Sign in to your Anthropic account from inside CodePilot (Claude Code is already bundled), or write `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` manually before launch.
 2. **Create a conversation** — Pick a working directory, select a mode (Code / Plan / Ask), and pick a model in the composer.
 3. **Set up Assistant Workspace** (optional) — Go to **Settings > Assistant**, choose a workspace directory. CodePilot creates `soul.md`, `user.md`, `claude.md`, and `memory.md` at the workspace root.
 4. **Add MCP servers** (optional) — Go to the **MCP** page in the sidebar to add and manage MCP servers. Custom skills are managed on the separate **Skills** page.
@@ -191,9 +190,9 @@ xattr -cr /Applications/CodePilot.app
 ## FAQ
 
 <details>
-<summary>Do I need the Claude Code CLI?</summary>
+<summary>Do I need to install the Claude Code CLI separately?</summary>
 
-Yes. CodePilot is a GUI on top of `claude`; it relies on `~/.claude/settings.json` (or your `claude` login session) for credentials, base URL, and default model. Install the CLI with `npm install -g @anthropic-ai/claude-code` and either run `claude` once or write `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` into the settings file manually before launching CodePilot.
+No. CodePilot ships with the official Claude Code native binary inside the installer, so you don't need Node.js, npm, Bun, or `curl claude.ai/install.sh`. The bundled binary is always used at runtime; user-installed copies on your machine (if any) are listed informationally but not invoked. You still need to sign in with an Anthropic account or populate `~/.claude/settings.json` so CodePilot has credentials.
 </details>
 
 <details>

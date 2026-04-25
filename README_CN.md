@@ -1,7 +1,7 @@
 <img src="docs/icon-readme.png" width="32" height="32" alt="CodePilot" style="vertical-align: middle; margin-right: 8px;" /> CodePilot
 ===
 
-**Claude Code 的桌面 GUI** -- 在 Claude Agent SDK 之上提供完整的桌面体验，凭据和模型直接读取 `~/.claude` 配置。通过 MCP、Skills 扩展能力，手机远程控制，让你的助理学会你的工作方式。
+**Claude Code 的桌面 GUI** -- 安装包内置 Claude Code 原生二进制（无需 Node.js 或单独安装），凭据和模型直接读取 `~/.claude` 配置。通过 MCP、Skills 扩展能力，手机远程控制，让你的助理学会你的工作方式。
 
 [![GitHub release](https://img.shields.io/github/v/release/op7418/CodePilot)](https://github.com/op7418/CodePilot/releases)
 [![Downloads](https://img.shields.io/github/downloads/op7418/CodePilot/total)](https://github.com/op7418/CodePilot/releases)
@@ -62,11 +62,10 @@ CodePilot 从编程工具起步，已成长为**通用 AI Agent 桌面客户端*
 
 ### 路径 A：下载发布版（大多数用户）
 
-1. 安装 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview)：`npm install -g @anthropic-ai/claude-code`
-2. 运行一次 `claude` 完成登录（或手动把 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` 写进 `~/.claude/settings.json`）
-3. 从上方[下载](#下载)区域下载对应平台的 CodePilot 安装包
-4. 启动 CodePilot — 凭据会自动从 `~/.claude` 读取
-5. 在对话框选择模型即可开始对话
+1. 从上方[下载](#下载)区域下载对应平台的 CodePilot 安装包
+2. 启动 CodePilot — Claude Code 已经内置在安装包里，不需要 Node.js 或单独安装
+3. 在 CodePilot 内登录 Anthropic 账号（也可以手动把 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` 写进 `~/.claude/settings.json`）
+4. 在对话框选择模型即可开始对话
 
 ### 路径 B：源码构建（开发者）
 
@@ -129,7 +128,7 @@ npm run electron:dev     # 完整桌面应用
 
 ## 首次使用
 
-1. **确保 `~/.claude` 已配置** — 安装 Claude Code CLI（`npm install -g @anthropic-ai/claude-code`）后运行一次 `claude` 完成登录，或手动把 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` 写进 `~/.claude/settings.json`。
+1. **配置 `~/.claude`** — Claude Code 已经内置，启动后在 CodePilot 内登录 Anthropic 账号即可；如需手动配置，把 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` 写进 `~/.claude/settings.json`。
 2. **创建对话** — 选择工作目录、交互模式（Code / Plan / Ask），并在输入框中选择模型。
 3. **设置 Assistant Workspace**（可选）— 前往 **设置 > Assistant**，选择工作区目录。CodePilot 会在工作区根目录创建 `soul.md`、`user.md`、`claude.md` 和 `memory.md`。
 4. **添加 MCP 服务器**（可选）— 在侧边栏的 **MCP** 页面添加和管理 MCP 服务器。自定义技能在单独的 **Skills** 页面管理。
@@ -189,9 +188,9 @@ xattr -cr /Applications/CodePilot.app
 ## 常见问题
 
 <details>
-<summary>必须安装 Claude Code CLI 吗？</summary>
+<summary>需要单独安装 Claude Code CLI 吗？</summary>
 
-需要。CodePilot 是 `claude` 的 GUI 外壳，凭据 / Base URL / 默认模型完全依赖 `~/.claude/settings.json`（或 `claude` 登录态）。在启动 CodePilot 之前请先 `npm install -g @anthropic-ai/claude-code` 并运行一次 `claude` 完成登录，或手动把 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` 写进设置文件。
+不需要。CodePilot 安装包内置了官方 Claude Code 原生二进制，所以不需要 Node.js、npm、Bun，也不需要 `curl claude.ai/install.sh`。运行时永远使用内置版本；如果你机器上还有其他渠道安装的 `claude`，CodePilot 只会做信息展示，不会调用。但你仍然需要登录 Anthropic 账号或填好 `~/.claude/settings.json`，CodePilot 才能拿到凭据。
 </details>
 
 <details>

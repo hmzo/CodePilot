@@ -2,6 +2,8 @@
 
 CodePilot 是 Claude Code 的桌面 GUI 客户端。Electron 40 做外壳，Next.js 16 (App Router) 做前端和 API 层，better-sqlite3 做本地持久化，通过 Claude Agent SDK 直接读取用户主目录下的 `~/.claude` 配置（凭据、base_url、默认模型完全由 Claude Code 设置接管）。
 
+**Claude Code 二进制内置：** 安装包内置官方 Claude Code 原生二进制（macOS arm64/x64、Windows x64、Linux x64），运行时永远使用内置版本，用户机器无需 Node.js 或单独安装。详见 [docs/handover/bundled-claude-code.md](./docs/handover/bundled-claude-code.md)。
+
 ## 目录结构
 
 ```
@@ -48,8 +50,17 @@ src/
     └── zh.ts               # 中文
 
 electron/
-├── main.ts         # Electron 主进程（窗口、IPC、Utility Process）
+├── main.ts         # Electron 主进程（窗口、IPC、Utility Process、bundled Claude PATH 注入）
 └── preload.ts      # contextBridge 暴露（install API, updater API）
+
+scripts/
+├── fetch-claude-binary.js  # 从 npm registry 下载并校验 Claude Code 原生二进制
+├── before-pack.js          # electron-builder beforePack 钩子，按目标平台/架构拉对应二进制
+├── after-sign.js           # macOS 签名（含 bundled claude 二进制重签）
+└── after-pack.js           # 重编译 better-sqlite3 为 Electron ABI
+
+vendor/                     # gitignored — 构建期填充
+└── claude-code/            # 当前架构对应的 claude / claude.exe
 ```
 
 ## 数据流
@@ -159,6 +170,7 @@ Schema 定义在 `src/lib/db.ts`：
 | 文档 | 路径 | 内容 |
 |------|------|------|
 | Bridge 系统 | `docs/handover/bridge-system.md` | 架构、适配器、渲染管线 |
+| Bundled Claude Code | `docs/handover/bundled-claude-code.md` | 内置 claude 二进制：fetch / extraResources / 签名 / runtime 解析 |
 | Agent 工具集成 | `docs/handover/agent-tooling-todo-bridge.md` | SDK 工具调用、任务桥接 |
 | SDK 集成调研 | `docs/research/chat-sdk-integration-feasibility.md` | Chat SDK 可行性分析 |
 | 上下文存储迁移（调研） | `docs/research/context-storage-migration-plan.md` | 数据库迁移详细方案 |

@@ -1,3 +1,52 @@
+## CodePilot v0.49.0
+
+> 内置 Claude Code 原生二进制：不再依赖 Node.js，下载安装包就能直接聊。
+
+### 新增功能
+
+- **内置 Claude Code**：CodePilot 安装包现在直接捆绑 Claude Code v2.1.119 原生二进制（macOS arm64/x64、Windows x64），无需提前安装 Node.js、`npm install -g @anthropic-ai/claude-code` 或 `curl claude.ai/install.sh`，下载即用
+- 用户机器上其他渠道安装的 `claude`（npm/Bun/Homebrew/winget 等）会在设置页做信息展示，CodePilot 始终使用内置版本，避免版本错乱
+- 启动时把内置 claude 目录前置到子进程的 PATH，所有 SDK 工具调用都能找到正确版本
+
+### 修复问题
+
+- 修复在没有 Node.js 的干净系统上 CodePilot 启动后无法发送消息的问题（根因：旧版本依赖用户预装 Claude Code CLI）
+
+### 优化改进
+
+- Connection Status 状态胶囊改为「内置 vX.Y.Z」直接展示，去掉「请安装/请升级」流程
+- 删除应用内的 Claude Code 安装向导和后台升级流程（约 400+ 行 IPC + UI 代码）
+- macOS 构建中 `Contents/Resources/claude/claude` 跟随主应用一起用 Developer ID 重签 + hardened runtime，`codesign --verify --deep --strict` 通过
+- 安装包体积每个架构增加约 200MB（DMG 从 ~150MB 增加到 ~350MB），换来零依赖、离线可用
+
+### 已知影响
+
+- 单平台 DMG/EXE 文件体积约翻倍，下载耗时更长
+- 内置 Claude Code 版本随 CodePilot 一起发版升级，不再支持后台静默升级；如果想跑更新版本，请等待下一次 CodePilot 发版
+- Windows 仍需手动安装 Git for Windows 才能让 Claude Code 的 shell 工具调用正常工作（应用内提供一键安装）
+
+## 下载地址
+
+### macOS
+- [Apple Silicon (M1/M2/M3/M4)](https://github.com/op7418/CodePilot/releases/download/v0.49.0/CodePilot-0.49.0-arm64.dmg)
+- [Intel](https://github.com/op7418/CodePilot/releases/download/v0.49.0/CodePilot-0.49.0-x64.dmg)
+
+### Windows
+- [Windows 安装包](https://github.com/op7418/CodePilot/releases/download/v0.49.0/CodePilot.Setup.0.49.0.exe)
+
+## 安装说明
+
+**macOS**: 下载 DMG → 拖入 Applications → 首次启动如遇安全提示，在系统设置 > 隐私与安全中点击"仍要打开"
+**Windows**: 下载 exe 安装包 → 双击安装；首次使用前请确保已安装 Git for Windows（应用内会引导）
+
+## 系统要求
+
+- macOS 12.0+ / Windows 10+ / Linux (glibc 2.31+)
+- 需要配置 Anthropic 凭据（`~/.claude/settings.json` 或 `claude` 登录态）
+- **不再需要预装 Node.js 或 Claude Code CLI**
+
+---
+
 ## CodePilot v0.48.0
 
 > 修复使用 VPN/代理工具时飞书桥接无法连接的问题，关闭自动更新检查。
