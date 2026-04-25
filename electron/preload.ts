@@ -16,16 +16,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('dialog:open-folder', options),
   },
   install: {
-    checkPrerequisites: () => ipcRenderer.invoke('install:check-prerequisites'),
-    start: () => ipcRenderer.invoke('install:start'),
-    cancel: () => ipcRenderer.invoke('install:cancel'),
-    getLogs: () => ipcRenderer.invoke('install:get-logs'),
+    // Claude Code is bundled with CodePilot; only Git Bash (Windows) install
+    // remains as an end-user-triggerable action.
     installGit: () => ipcRenderer.invoke('install:git'),
-    onProgress: (callback: (data: unknown) => void) => {
-      const listener = (_event: unknown, data: unknown) => callback(data);
-      ipcRenderer.on('install:progress', listener);
-      return () => { ipcRenderer.removeListener('install:progress', listener); };
-    },
   },
   bridge: {
     isActive: () => ipcRenderer.invoke('bridge:is-active'),

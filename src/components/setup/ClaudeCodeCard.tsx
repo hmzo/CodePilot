@@ -8,10 +8,12 @@ import { useTranslation } from '@/hooks/useTranslation';
 import type { SetupCardStatus } from '@/types';
 
 const INSTALL_TYPE_LABELS: Record<string, string> = {
+  bundled: 'Bundled',
   native: 'Native',
   npm: 'npm',
   bun: 'Bun',
   homebrew: 'Homebrew',
+  winget: 'winget',
   unknown: 'Unknown',
 };
 
@@ -121,15 +123,9 @@ export function ClaudeCodeCard({ status, onStatusChange }: ClaudeCodeCardProps) 
             <p className="text-[10px] font-mono text-muted-foreground/60">{claudeStatus.binaryPath}</p>
           )}
           {(claudeStatus.otherInstalls?.length ?? 0) > 0 && (
-            <div className="mt-2 rounded bg-status-warning-muted p-2.5 text-xs space-y-2">
-              <p className="font-medium text-status-warning-foreground">{t('setup.claude.conflict')}</p>
-              <div className="text-muted-foreground">
-                <p className="font-medium text-foreground">{t('setup.claude.conflictUsing')}:</p>
-                <p className="mt-0.5">
-                  <code className="bg-muted px-1 rounded text-[10px]">{claudeStatus.binaryPath}</code>
-                  {' '}({INSTALL_TYPE_LABELS[claudeStatus.installType || 'unknown']} v{claudeStatus.version})
-                </p>
-              </div>
+            <div className="mt-2 rounded bg-muted/50 p-2.5 text-xs space-y-2">
+              <p className="font-medium text-foreground">{t('setup.claude.conflict')}</p>
+              <p className="text-muted-foreground text-[11px]">{t('setup.claude.conflictUsing')}.</p>
               {!showCleanup ? (
                 <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => setShowCleanup(true)}>
                   {t('setup.claude.viewCleanup')}
@@ -143,7 +139,7 @@ export function ClaudeCodeCard({ status, onStatusChange }: ClaudeCodeCardProps) 
                         <p className="text-muted-foreground">
                           <span className="font-medium text-foreground">{t('setup.claude.conflictOther')}:</span>{' '}
                           <code className="bg-muted px-1 rounded text-[10px]">{inst.path}</code>
-                          {' '}({INSTALL_TYPE_LABELS[inst.type]} {inst.version && `v${inst.version}`})
+                          {' '}({INSTALL_TYPE_LABELS[inst.type] ?? inst.type} {inst.version && `v${inst.version}`})
                         </p>
                         {cmd && (
                           <div>
@@ -155,9 +151,6 @@ export function ClaudeCodeCard({ status, onStatusChange }: ClaudeCodeCardProps) 
                     );
                   })}
                   <p className="text-muted-foreground/80 text-[11px] pt-1">{t('setup.claude.conflictResolved')}</p>
-                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={checkStatus}>
-                    {t('setup.claude.redetect')}
-                  </Button>
                 </div>
               )}
             </div>
@@ -177,11 +170,6 @@ export function ClaudeCodeCard({ status, onStatusChange }: ClaudeCodeCardProps) 
           ) : (
             <div className="text-xs text-muted-foreground">
               <p>{t('setup.claude.notFound')}</p>
-              <code className="block rounded bg-muted px-2 py-1 mt-1 text-[11px]">
-                {typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win')
-                  ? 'irm https://claude.ai/install.ps1 | iex'
-                  : 'curl -fsSL https://claude.ai/install.sh | bash'}
-              </code>
             </div>
           )}
           <Button size="sm" variant="outline" className="text-xs" onClick={checkStatus}>

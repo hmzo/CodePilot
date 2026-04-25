@@ -91,12 +91,50 @@ export function getExtraPathDirs(): string[] {
 
 /**
  * Classify a Claude CLI binary path by installation method.
+ *
+ * 'bundled' means the binary shipped inside CodePilot itself (under
+ * Contents/Resources/claude/ in production or <repo>/vendor/claude-code/ in
+ * dev). It always wins over user-installed copies.
  */
-export type ClaudeInstallType = 'native' | 'homebrew' | 'npm' | 'bun' | 'winget' | 'unknown';
+export type ClaudeInstallType = 'bundled' | 'native' | 'homebrew' | 'npm' | 'bun' | 'winget' | 'unknown';
+
+/**
+ * Resolve the path to the Claude Code binary bundled with CodePilot.
+ *
+ * Production: process.resourcesPath/claude/claude (or claude.exe on Windows).
+ * Development: <repo-root>/vendor/claude-code/claude — populated by
+ *              scripts/fetch-claude-binary.js.
+ *
+ * Returns undefined if no bundled binary can be located, in which case the
+ * caller should treat the install as broken (we never fall back to a user
+ * copy in production).
+ */
+export function getBundledClaudePath(): string | undefined {
+  const exe = isWindows ? 'claude.exe' : 'claude';
+
+  // Production: Electron sets process.resourcesPath to <App>/Contents/Resources
+  // (macOS) or <App>/resources (Windows/Linux).
+  // Outside Electron (e.g. Next.js standalone server in dev) it's "" or "/".
+  const resPath = (process as unknown as { resourcesPath?: string }).resourcesPath;
+  if (typeof resPath === 'string' && resPath && resPath !== '/' && resPath !== '\\') {
+    const p = path.join(resPath, 'claude', exe);
+    if (fs.existsSync(p)) return p;
+  }
+
+  // Dev fallback: cwd-relative (npm scripts always run with project root as cwd).
+  const devPath = path.join(process.cwd(), 'vendor', 'claude-code', exe);
+  if (fs.existsSync(devPath)) return devPath;
+
+  return undefined;
+}
 
 export function classifyClaudePath(binPath: string): ClaudeInstallType {
   const home = os.homedir();
   const normalized = binPath.replace(/\\/g, '/');
+  // Bundled path always wins (production: Resources/claude, dev: vendor/claude-code/)
+  if (normalized.includes('/Resources/claude/') || normalized.includes('/vendor/claude-code/')) {
+    return 'bundled';
+  }
   // Native installer: ~/.local/bin/claude or ~/.claude/bin/claude
   if (normalized.includes('/.local/bin/')) return 'native';
   if (normalized.includes('/.claude/bin/')) return 'native';
@@ -291,6 +329,12 @@ export function findClaudeBinary(): string | undefined {
 }
 
 function _findClaudeBinaryUncached(): string | undefined {
+  // Bundled binary always wins. CodePilot ships the version it was tested
+  // against; user-installed copies are surfaced in the UI for transparency
+  // but never resolved as the active binary.
+  const bundled = getBundledClaudePath();
+  if (bundled) return bundled;
+
   // Try known candidate paths first
   for (const p of getClaudeCandidatePaths()) {
     try {
@@ -395,6 +439,12 @@ export interface UpgradeCommand {
 
 export function getUpgradeCommand(installType: ClaudeInstallType): UpgradeCommand {
   switch (installType) {
+    case 'bundled':
+      // Bundled Claude Code is upgraded by shipping a new CodePilot release.
+      // Returning the same `claude update` shape would be misleading; pretend
+      // to upgrade by re-running the in-app updater. Callers should already
+      // skip the upgrade flow entirely for this type.
+      return { command: 'claude', args: ['--version'], shell: false };
     case 'homebrew':
       return { command: 'brew', args: ['upgrade', 'claude-code'], shell: false };
     case 'npm':

@@ -20,7 +20,7 @@ if (!sentryDisabled) {
 
 import { app, BrowserWindow, Notification, nativeImage, dialog, session, utilityProcess, ipcMain, shell, Tray, Menu } from 'electron';
 import path from 'path';
-import { execFileSync, spawn, ChildProcess } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import net from 'net';
 import os from 'os';
@@ -56,30 +56,6 @@ let resolvedProxyEnv: Record<string, string> = {};
 let isQuitting = false;
 let tray: Tray | null = null;
 let bgNotifyTimer: ReturnType<typeof setInterval> | null = null;
-
-// --- Install orchestrator ---
-interface InstallStep {
-  id: string;
-  label: string;
-  status: 'pending' | 'running' | 'success' | 'failed' | 'skipped';
-  error?: string;
-}
-
-interface InstallState {
-  status: 'idle' | 'running' | 'success' | 'failed' | 'cancelled';
-  currentStep: string | null;
-  steps: InstallStep[];
-  logs: string[];
-}
-
-let installState: InstallState = {
-  status: 'idle',
-  currentStep: null,
-  steps: [],
-  logs: [],
-};
-
-let installProcess: ChildProcess | null = null;
 
 const terminalManager = new TerminalManager();
 
@@ -479,13 +455,37 @@ function findGitBashSync(): boolean {
 }
 
 /**
+ * Resolve the directory containing the bundled Claude Code binary.
+ * Production: process.resourcesPath/claude. Development: <cwd>/vendor/claude-code.
+ * Returns undefined if neither exists, so callers won't pollute PATH with
+ * dead entries.
+ */
+function getBundledClaudeDir(): string | undefined {
+  const exe = process.platform === 'win32' ? 'claude.exe' : 'claude';
+
+  if (!isDev && process.resourcesPath) {
+    const dir = path.join(process.resourcesPath, 'claude');
+    if (fs.existsSync(path.join(dir, exe))) return dir;
+  }
+
+  const devDir = path.join(process.cwd(), 'vendor', 'claude-code');
+  if (fs.existsSync(path.join(devDir, exe))) return devDir;
+
+  return undefined;
+}
+
+/**
  * Build an expanded PATH that includes common locations for node, npm globals,
- * claude, nvm, homebrew, etc. Shared by the server launcher and install orchestrator.
+ * claude, nvm, homebrew, etc. The bundled Claude Code binary directory is
+ * prepended so any subprocess (SDK, terminal, git hooks) resolves `claude`
+ * to the version we ship.
  */
 function getExpandedShellPath(): string {
   const home = os.homedir();
   const shellPath = userShellEnv.PATH || process.env.PATH || '';
   const sep = path.delimiter;
+  const bundledClaudeDir = getBundledClaudeDir();
+  const prefix = bundledClaudeDir ? [bundledClaudeDir] : [];
 
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
@@ -497,11 +497,18 @@ function getExpandedShellPath(): string {
       path.join(home, '.local', 'bin'),
       path.join(home, '.claude', 'bin'),
     ];
-    const allParts = [shellPath, ...winExtra].join(sep).split(sep).filter(Boolean);
+    const allParts = [...prefix, shellPath, ...winExtra].join(sep).split(sep).filter(Boolean);
     return [...new Set(allParts)].join(sep);
   } else {
     const basePath = `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin`;
-    const raw = `${basePath}:${home}/.npm-global/bin:${home}/.local/bin:${home}/.claude/bin:${shellPath}`;
+    const raw = [
+      ...prefix,
+      basePath,
+      `${home}/.npm-global/bin`,
+      `${home}/.local/bin`,
+      `${home}/.claude/bin`,
+      shellPath,
+    ].join(':');
     const allParts = raw.split(':').filter(Boolean);
     return [...new Set(allParts)].join(':');
   }
@@ -765,446 +772,10 @@ app.whenReady().then(async () => {
     app.dock.setIcon(nativeImage.createFromPath(iconPath));
   }
 
-  // --- Install wizard IPC handlers ---
-
-  ipcMain.handle('install:check-prerequisites', async () => {
-    const expandedPath = getExpandedShellPath();
-    const execEnv = { ...sanitizedProcessEnv(), ...userShellEnv, PATH: expandedPath };
-
-    // Candidate paths — native first, then bun, then homebrew, then npm
-    const home = os.homedir();
-    const candidatePaths = process.platform === 'win32'
-      ? [
-          path.join(home, '.local', 'bin', 'claude.exe'),
-          path.join(home, '.local', 'bin', 'claude.cmd'),
-          path.join(home, '.claude', 'bin', 'claude.exe'),
-          path.join(home, '.claude', 'bin', 'claude.cmd'),
-          path.join(home, '.bun', 'bin', 'claude.exe'),
-          path.join(home, '.bun', 'bin', 'claude.cmd'),
-          path.join(process.env.APPDATA || '', 'npm', 'claude.cmd'),
-          path.join(process.env.LOCALAPPDATA || '', 'npm', 'claude.cmd'),
-        ].filter(p => p && !p.startsWith(path.sep))
-      : [
-          path.join(home, '.local', 'bin', 'claude'),
-          path.join(home, '.claude', 'bin', 'claude'),
-          path.join(home, '.bun', 'bin', 'claude'),
-          '/opt/homebrew/bin/claude',
-          '/usr/local/bin/claude',
-          path.join(home, '.npm-global', 'bin', 'claude'),
-        ];
-
-    function classifyPath(p: string): 'native' | 'homebrew' | 'npm' | 'bun' | 'unknown' {
-      const n = p.replace(/\\/g, '/');
-      if (n.includes('/.local/bin/') || n.includes('/.claude/bin/')) return 'native';
-      if (n.includes('/.bun/bin/') || n.includes('/.bun/install/')) return 'bun';
-      if (n.includes('/homebrew/') || n.includes('/Cellar/')) return 'homebrew';
-      if (n.includes('/npm')) return 'npm';
-      if (n === '/usr/local/bin/claude') {
-        try {
-          const real = fs.realpathSync(p);
-          if (real.includes('node_modules')) return 'npm';
-          if (real.includes('homebrew') || real.includes('Cellar')) return 'homebrew';
-          if (real.includes('.bun')) return 'bun';
-        } catch { /* ignore */ }
-        return 'unknown';
-      }
-      return 'unknown';
-    }
-
-    interface Detection { path: string; version: string | null; type: string }
-    const allInstalls: Detection[] = [];
-    const seenReal = new Set<string>();
-
-    for (const p of candidatePaths) {
-      try {
-        let realPath: string;
-        try { realPath = fs.realpathSync(p); } catch { realPath = p; }
-        if (seenReal.has(realPath)) continue;
-
-        const isWin = process.platform === 'win32';
-        const shell = isWin && /\.(cmd|bat)$/i.test(p);
-        const result = execFileSync(p, ['--version'], {
-          timeout: 5000, encoding: 'utf-8', env: execEnv, shell, stdio: 'pipe',
-        });
-        seenReal.add(realPath);
-        allInstalls.push({ path: p, version: result.trim() || null, type: classifyPath(p) });
-      } catch {
-        // not at this path
-      }
-    }
-
-    // Also scan PATH via which/where to catch bun, custom, or other non-standard installs
-    try {
-      const isWinPlatform = process.platform === 'win32';
-      const cmd = isWinPlatform ? 'where' : '/usr/bin/which';
-      const args = isWinPlatform ? ['claude'] : ['-a', 'claude']; // -a = show ALL matches
-      const whichResult = execFileSync(cmd, args, {
-        timeout: 3000, encoding: 'utf-8', env: execEnv,
-        shell: isWinPlatform, stdio: 'pipe',
-      });
-      for (const line of whichResult.trim().split(/\r?\n/)) {
-        const candidate = line.trim();
-        if (!candidate) continue;
-        try {
-          let realPath: string;
-          try { realPath = fs.realpathSync(candidate); } catch { realPath = candidate; }
-          if (seenReal.has(realPath)) continue;
-
-          const shell = isWinPlatform && /\.(cmd|bat)$/i.test(candidate);
-          const result = execFileSync(candidate, ['--version'], {
-            timeout: 5000, encoding: 'utf-8', env: execEnv, shell, stdio: 'pipe',
-          });
-          seenReal.add(realPath);
-          allInstalls.push({ path: candidate, version: result.trim() || null, type: classifyPath(candidate) });
-        } catch {
-          // invalid binary at this path
-        }
-      }
-    } catch {
-      // which/where failed
-    }
-
-    const primary = allInstalls[0];
-    const hasClaude = !!primary;
-
-    // On Windows, check for Git Bash (bash.exe) — this is what the SDK actually uses at runtime.
-    // Must match the detection strategy in platform.ts:findGitBash() to avoid false negatives.
-    let hasGit = true; // default true for non-Windows
-    if (process.platform === 'win32') {
-      hasGit = false;
-      // 1. User-specified env var
-      const envBash = process.env.CLAUDE_CODE_GIT_BASH_PATH || userShellEnv.CLAUDE_CODE_GIT_BASH_PATH;
-      if (envBash && fs.existsSync(envBash)) {
-        hasGit = true;
-      }
-      // 2. Common installation paths
-      if (!hasGit) {
-        const commonPaths = [
-          'C:\\Program Files\\Git\\bin\\bash.exe',
-          'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-        ];
-        if (commonPaths.some(p => fs.existsSync(p))) {
-          hasGit = true;
-        }
-      }
-      // 3. Derive from `where git`
-      if (!hasGit) {
-        try {
-          const whereResult = execFileSync('where', ['git'], {
-            timeout: 3000, encoding: 'utf-8', shell: true, stdio: 'pipe',
-          });
-          for (const line of whereResult.trim().split(/\r?\n/)) {
-            const gitExe = line.trim();
-            if (!gitExe) continue;
-            const gitDir = path.dirname(path.dirname(gitExe));
-            const bashPath = path.join(gitDir, 'bin', 'bash.exe');
-            if (fs.existsSync(bashPath)) {
-              hasGit = true;
-              break;
-            }
-          }
-        } catch {
-          // where git failed
-        }
-      }
-    }
-
-    return {
-      hasClaude,
-      claudeVersion: primary?.version,
-      claudePath: primary?.path,
-      claudeInstallType: primary?.type,
-      otherInstalls: allInstalls.slice(1),
-      hasGit,
-      platform: process.platform,
-    };
-  });
-
-  ipcMain.handle('install:start', () => {
-    if (installState.status === 'running') {
-      throw new Error('Installation is already running');
-    }
-
-    // On Windows, check if Git Bash is missing and prepend an install step
-    const isWin = process.platform === 'win32';
-    const needsGit = isWin && !findGitBashSync();
-
-    const steps: InstallStep[] = [
-      ...(needsGit ? [{ id: 'install-git', label: 'Installing Git for Windows', status: 'pending' as const }] : []),
-      { id: 'install-claude', label: 'Installing Claude Code (native)', status: 'pending' },
-      { id: 'verify', label: 'Verifying installation', status: 'pending' },
-    ];
-
-    installState = {
-      status: 'running',
-      currentStep: null,
-      steps,
-      logs: [],
-    };
-
-    const expandedPath = getExpandedShellPath();
-    const home = os.homedir();
-    const execEnv: Record<string, string> = {
-      ...userShellEnv,
-      ...sanitizedProcessEnv(),
-      ...userShellEnv,
-      PATH: expandedPath,
-    };
-
-    function sendProgress() {
-      mainWindow?.webContents.send('install:progress', installState);
-    }
-
-    function setStep(id: string, status: InstallStep['status'], error?: string) {
-      const step = installState.steps.find(s => s.id === id);
-      if (step) {
-        step.status = status;
-        step.error = error;
-      }
-      installState.currentStep = id;
-      sendProgress();
-    }
-
-    function addLog(line: string) {
-      installState.logs.push(line);
-      sendProgress();
-    }
-
-    // Run the installation sequence asynchronously
-    (async () => {
-      try {
-        // Step 0 (Windows only): Install Git for Windows if missing
-        if (needsGit) {
-          setStep('install-git', 'running');
-          addLog('Installing Git for Windows via winget...');
-
-          const gitSuccess = await new Promise<boolean>((resolve) => {
-            const child = spawn('winget', [
-              'install', 'Git.Git',
-              '--silent',
-              '--accept-package-agreements',
-              '--accept-source-agreements',
-            ], {
-              env: execEnv,
-              shell: true,
-              stdio: ['ignore', 'pipe', 'pipe'],
-            });
-            installProcess = child;
-
-            child.stdout?.on('data', (data: Buffer) => {
-              for (const line of data.toString().split('\n').filter(Boolean)) addLog(line);
-            });
-            child.stderr?.on('data', (data: Buffer) => {
-              for (const line of data.toString().split('\n').filter(Boolean)) addLog(line);
-            });
-            child.on('error', (err) => { addLog(`Error: ${err.message}`); resolve(false); });
-            child.on('close', (code) => {
-              installProcess = null;
-              resolve(code === 0);
-            });
-          });
-
-          if (installState.status === 'cancelled') {
-            setStep('install-git', 'failed', 'Cancelled');
-            return;
-          }
-          if (!gitSuccess) {
-            // Non-fatal: skip Git install and continue with Claude.
-            // The user can install Git manually later.
-            addLog('winget not available or install failed. Skipping — please install Git for Windows manually from https://git-scm.com/downloads/win');
-            setStep('install-git', 'skipped', 'Auto-install skipped. Please install Git manually.');
-          } else {
-            addLog('Git for Windows installed successfully.');
-            setStep('install-git', 'success');
-          }
-        }
-
-        // Step 1: Install Claude Code via native installer
-        setStep('install-claude', 'running');
-
-        if (isWin) {
-          // Windows: download and run install.cmd
-          addLog('Downloading native installer for Windows...');
-
-          const installSuccess = await new Promise<boolean>((resolve) => {
-            // Download install.cmd to temp, then execute it
-            const tmpDir = os.tmpdir();
-            const installCmd = path.join(tmpDir, 'claude-install.cmd');
-
-            const downloadChild = spawn('curl', ['-fsSL', 'https://claude.ai/install.cmd', '-o', installCmd], {
-              env: execEnv,
-              shell: true,
-              stdio: ['ignore', 'pipe', 'pipe'],
-            });
-            installProcess = downloadChild;
-
-            downloadChild.stderr?.on('data', (data: Buffer) => {
-              for (const line of data.toString().split('\n').filter(Boolean)) addLog(line);
-            });
-
-            downloadChild.on('close', (dlCode) => {
-              if (dlCode !== 0) {
-                addLog('Failed to download installer.');
-                resolve(false);
-                return;
-              }
-
-              addLog('Running installer...');
-              const child = spawn(installCmd, [], {
-                env: execEnv,
-                shell: true,
-                stdio: ['ignore', 'pipe', 'pipe'],
-              });
-              installProcess = child;
-
-              child.stdout?.on('data', (data: Buffer) => {
-                for (const line of data.toString().split('\n').filter(Boolean)) addLog(line);
-              });
-              child.stderr?.on('data', (data: Buffer) => {
-                for (const line of data.toString().split('\n').filter(Boolean)) addLog(line);
-              });
-              child.on('error', (err) => { addLog(`Error: ${err.message}`); resolve(false); });
-              child.on('close', (code) => {
-                installProcess = null;
-                // Clean up temp file
-                try { fs.unlinkSync(installCmd); } catch { /* ignore */ }
-                resolve(code === 0);
-              });
-            });
-
-            downloadChild.on('error', (err) => {
-              addLog(`Download error: ${err.message}`);
-              resolve(false);
-            });
-          });
-
-          if (installState.status === 'cancelled') {
-            setStep('install-claude', 'failed', 'Cancelled');
-            return;
-          }
-          if (!installSuccess) {
-            setStep('install-claude', 'failed', 'Native installer failed. Check logs for details.');
-            installState.status = 'failed';
-            sendProgress();
-            return;
-          }
-        } else {
-          // macOS / Linux: curl | bash
-          addLog('Running: curl -fsSL https://claude.ai/install.sh | bash');
-
-          const installSuccess = await new Promise<boolean>((resolve) => {
-            const userShell = process.env.SHELL || '/bin/bash';
-            const child = spawn(userShell, ['-c', 'curl -fsSL https://claude.ai/install.sh | bash'], {
-              env: execEnv,
-              stdio: ['ignore', 'pipe', 'pipe'],
-            });
-
-            installProcess = child;
-
-            child.stdout?.on('data', (data: Buffer) => {
-              for (const line of data.toString().split('\n').filter(Boolean)) addLog(line);
-            });
-            child.stderr?.on('data', (data: Buffer) => {
-              for (const line of data.toString().split('\n').filter(Boolean)) addLog(line);
-            });
-            child.on('error', (err) => { addLog(`Error: ${err.message}`); resolve(false); });
-            child.on('close', (code) => {
-              installProcess = null;
-              if (code === 0) {
-                addLog('Native installer completed successfully.');
-                resolve(true);
-              } else if (installState.status === 'cancelled') {
-                addLog('Installation was cancelled.');
-                resolve(false);
-              } else {
-                addLog(`Installer exited with code ${code}`);
-                resolve(false);
-              }
-            });
-          });
-
-          if (installState.status === 'cancelled') {
-            setStep('install-claude', 'failed', 'Cancelled');
-            return;
-          }
-          if (!installSuccess) {
-            setStep('install-claude', 'failed', 'Native installer failed. Check logs for details.');
-            installState.status = 'failed';
-            sendProgress();
-            return;
-          }
-        }
-
-        setStep('install-claude', 'success');
-
-        // Step 2: Verify claude is available
-        setStep('verify', 'running');
-
-        // Native installer puts binary in ~/.local/bin/claude — add to PATH for verification
-        const verifyPath = `${path.join(home, '.local', 'bin')}${path.delimiter}${expandedPath}`;
-        const verifyEnv = { ...execEnv, PATH: verifyPath };
-
-        try {
-          const verifyOpts = isWin
-            ? { timeout: 5000, encoding: 'utf-8' as const, env: verifyEnv, shell: true, stdio: 'pipe' as const }
-            : { timeout: 5000, encoding: 'utf-8' as const, env: verifyEnv, stdio: 'pipe' as const };
-          const claudeResult = execFileSync('claude', ['--version'], verifyOpts);
-          addLog(`Claude Code installed: ${claudeResult.trim()}`);
-          setStep('verify', 'success');
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          addLog(`Verification failed: ${msg}`);
-          setStep('verify', 'failed', 'Claude Code was installed but could not be verified.');
-          installState.status = 'failed';
-          sendProgress();
-          return;
-        }
-
-        installState.status = 'success';
-        installState.currentStep = null;
-        sendProgress();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        addLog(`Unexpected error: ${msg}`);
-        installState.status = 'failed';
-        sendProgress();
-      }
-    })();
-  });
-
-  ipcMain.handle('install:cancel', () => {
-    if (installState.status !== 'running') {
-      return;
-    }
-
-    installState.status = 'cancelled';
-    installState.logs.push('Cancelling installation...');
-
-    if (installProcess) {
-      const pid = installProcess.pid;
-      try {
-        if (process.platform === 'win32' && pid) {
-          // Windows: kill entire process tree (shell: true spawns cmd.exe which
-          // spawns npm/winget — child.kill() only kills the shell, not the tree)
-          spawn('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' });
-        } else {
-          installProcess.kill();
-        }
-      } catch {
-        // already dead
-      }
-      installProcess = null;
-      installState.logs.push('Installation process terminated.');
-    }
-
-    mainWindow?.webContents.send('install:progress', installState);
-  });
-
-  ipcMain.handle('install:get-logs', () => {
-    return installState.logs;
-  });
-
-  // Install Git for Windows via winget (called from ConnectionStatus dialog)
+  // --- Install IPC handlers ---
+  // Claude Code itself ships bundled with CodePilot (see scripts/before-pack.js
+  // + electron-builder.yml), so the only end-user-triggerable install action
+  // left here is bootstrapping Git for Windows on machines that lack it.
   ipcMain.handle('install:git', async () => {
     if (process.platform !== 'win32') {
       return { success: false, error: 'Git installation is only needed on Windows' };
@@ -1238,7 +809,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  // --- End install wizard IPC handlers ---
+  // --- End install IPC handlers ---
 
   // Open a folder in the system file manager (Finder / Explorer)
   ipcMain.handle('shell:open-path', async (_event: Electron.IpcMainInvokeEvent, folderPath: string) => {
@@ -1481,19 +1052,6 @@ app.on('activate', async () => {
 app.on('before-quit', async (e) => {
   // Kill all terminal processes
   terminalManager.killAll();
-
-  // Kill any running install process (tree-kill on Windows)
-  if (installProcess) {
-    const pid = installProcess.pid;
-    try {
-      if (process.platform === 'win32' && pid) {
-        spawn('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' });
-      } else {
-        installProcess.kill();
-      }
-    } catch { /* already dead */ }
-    installProcess = null;
-  }
 
   destroyTray();
 

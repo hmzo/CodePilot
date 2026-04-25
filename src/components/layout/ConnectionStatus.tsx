@@ -14,20 +14,22 @@ import { cn } from "@/lib/utils";
 import { Warning } from "@/components/ui/icon";
 
 import { useTranslation } from "@/hooks/useTranslation";
-import { InstallWizard } from "@/components/layout/InstallWizard";
 
+/**
+ * Claude Code is bundled inside the CodePilot install (see
+ * scripts/before-pack.js + electron-builder.yml extraResources). User-installed
+ * `claude` binaries are surfaced for awareness only — CodePilot never resolves
+ * to them.
+ */
 interface ClaudeInstallInfo {
   path: string;
   version: string | null;
-  type: "native" | "homebrew" | "npm" | "bun" | "unknown";
+  type: "bundled" | "native" | "homebrew" | "npm" | "bun" | "winget" | "unknown";
 }
 
 interface ClaudeStatus {
   connected: boolean;
   version: string | null;
-  latestVersion?: string | null;
-  updateAvailable?: boolean;
-  manualUpdateChannel?: boolean;
   binaryPath?: string | null;
   installType?: string | null;
   otherInstalls?: ClaudeInstallInfo[];
@@ -35,53 +37,32 @@ interface ClaudeStatus {
   warnings?: string[];
 }
 
-const BASE_INTERVAL = 30_000; // 30s
-const BACKED_OFF_INTERVAL = 60_000; // 60s after 3 consecutive stable results
+const BASE_INTERVAL = 60_000; // 60s — bundled binary doesn't change at runtime
+const BACKED_OFF_INTERVAL = 180_000; // 3min after 3 stable results
 const STABLE_THRESHOLD = 3;
 
-/** Extract pure semver from strings like "2.1.90 (Claude Code)" → "2.1.90" */
-function extractVersion(v: string): string {
-  const match = v.match(/(\d+\.\d+\.\d+)/);
-  return match ? match[1] : v;
-}
-
 const INSTALL_TYPE_LABELS: Record<string, string> = {
+  bundled: "Bundled",
   native: "Native",
   homebrew: "Homebrew",
-  npm: "npm (deprecated)",
+  npm: "npm",
   bun: "bun",
   winget: "WinGet",
   unknown: "Unknown",
 };
 
-function getUninstallAdvice(type: string): string | null {
-  switch (type) {
-    case 'npm': return 'npm uninstall -g @anthropic-ai/claude-code';
-    case 'bun': return 'bun remove -g @anthropic-ai/claude-code';
-    case 'homebrew': return 'brew uninstall --cask claude-code';
-    default: return null;
-  }
-}
-
 export function ConnectionStatus() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [upgrading, setUpgrading] = useState(false);
-  const [upgradeResult, setUpgradeResult] = useState<{ success: boolean; output: string; error?: string } | null>(null);
   const [installingGit, setInstallingGit] = useState(false);
   const [gitInstallResult, setGitInstallResult] = useState<{ success: boolean; error?: string } | null>(null);
 
   const isElectron =
-    typeof window !== "undefined" &&
-    !!window.electronAPI?.install;
+    typeof window !== "undefined" && !!window.electronAPI?.install;
   const stableCountRef = useRef(0);
   const lastConnectedRef = useRef<boolean | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoPromptedRef = useRef(false);
-
-  // Use a ref-based approach to avoid circular deps between check and schedule
   const checkRef = useRef<() => void>(() => {});
 
   const schedule = useCallback(() => {
@@ -122,7 +103,7 @@ export function ConnectionStatus() {
   }, [checkStatus]);
 
   useEffect(() => {
-    checkStatus();  
+    checkStatus();
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -133,40 +114,6 @@ export function ConnectionStatus() {
     checkStatus();
   }, [checkStatus]);
 
-  // Invalidate server-side caches then refresh — called after install success
-  const handleInstallComplete = useCallback(async () => {
-    try {
-      await fetch('/api/claude-status/invalidate', { method: 'POST' });
-    } catch { /* best-effort */ }
-    stableCountRef.current = 0;
-    checkStatus();
-  }, [checkStatus]);
-
-  // Auto-prompt setup center on first disconnect detection (instead of install wizard)
-  useEffect(() => {
-    if (
-      status !== null &&
-      !status.connected &&
-      !autoPromptedRef.current &&
-      !dialogOpen
-    ) {
-      const dismissed = localStorage.getItem("codepilot:install-wizard-dismissed");
-      if (!dismissed) {
-        autoPromptedRef.current = true;
-        window.dispatchEvent(new CustomEvent('open-setup-center', { detail: { initialCard: 'claude' } }));
-        localStorage.setItem("codepilot:install-wizard-dismissed", "1");  
-      }
-    }
-  }, [status, dialogOpen]);
-
-  const handleWizardOpenChange = useCallback((open: boolean) => {
-    setWizardOpen(open);
-    if (!open) {
-      // Remember that user dismissed the wizard so we don't auto-prompt again
-      localStorage.setItem("codepilot:install-wizard-dismissed", "1");
-    }
-  }, []);
-
   const handleInstallGit = useCallback(async () => {
     if (!window.electronAPI?.install?.installGit) return;
     setInstallingGit(true);
@@ -175,7 +122,6 @@ export function ConnectionStatus() {
       const result = await window.electronAPI.install.installGit();
       setGitInstallResult(result);
       if (result.success) {
-        // Refresh status to pick up newly installed Git
         try { await fetch('/api/claude-status/invalidate', { method: 'POST' }); } catch { /* best-effort */ }
         stableCountRef.current = 0;
         checkStatus();
@@ -187,38 +133,15 @@ export function ConnectionStatus() {
     }
   }, [checkStatus]);
 
-  const handleUpgrade = useCallback(async () => {
-    if (!status?.installType) return;
-    setUpgrading(true);
-    setUpgradeResult(null);
-    try {
-      const res = await fetch('/api/claude-upgrade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ installType: status.installType }),
-      });
-      const data = await res.json();
-      setUpgradeResult(data);
-      if (data.success) {
-        // Invalidate cache and refresh status
-        try { await fetch('/api/claude-status/invalidate', { method: 'POST' }); } catch { /* best-effort */ }
-        stableCountRef.current = 0;
-        checkStatus();
-      }
-    } catch (err) {
-      setUpgradeResult({ success: false, output: '', error: String(err) });
-    } finally {
-      setUpgrading(false);
-    }
-  }, [status?.installType, checkStatus]);
-
   const connected = status?.connected ?? false;
-  const hasConflicts = (status?.otherInstalls?.length ?? 0) > 0;
+  const hasOtherInstalls = (status?.otherInstalls?.length ?? 0) > 0;
   const missingGit = status?.missingGit ?? false;
-  const updateAvailable = status?.updateAvailable ?? false;
-  const manualUpdateChannel = status?.manualUpdateChannel ?? false;
-  const showUpgrade = updateAvailable || manualUpdateChannel;
-  const hasWarnings = hasConflicts || missingGit || updateAvailable;
+  // Bundled is always the active install once connected. Other user-level
+  // installs are informational, not warnings.
+  const hasBlockingIssue = !connected || missingGit;
+  const installTypeLabel = status?.installType
+    ? INSTALL_TYPE_LABELS[status.installType] ?? status.installType
+    : null;
 
   return (
     <>
@@ -233,9 +156,7 @@ export function ConnectionStatus() {
             : connected
               ? missingGit
                 ? "bg-status-error-muted text-status-error-foreground"
-                : hasWarnings
-                  ? "bg-status-warning-muted text-status-warning-foreground"
-                  : "bg-status-success-muted text-status-success-foreground"
+                : "bg-status-success-muted text-status-success-foreground"
               : "bg-status-error-muted text-status-error-foreground"
         )}
       >
@@ -247,9 +168,7 @@ export function ConnectionStatus() {
               : connected
                 ? missingGit
                   ? "bg-status-error"
-                  : hasWarnings
-                    ? "bg-status-warning"
-                    : "bg-status-success"
+                  : "bg-status-success"
                 : "bg-status-error"
           )}
         />
@@ -258,121 +177,74 @@ export function ConnectionStatus() {
           : connected
             ? missingGit
               ? t('connection.missingGit')
-              : updateAvailable
-                ? t('connection.updateAvailable')
-                : hasConflicts
-                  ? t('connection.conflict')
-                  : t('connection.connected')
-            : t('connection.disconnected')}
+              : t('connection.bundled')
+            : t('connection.unavailable')}
       </Button>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {connected
+              {hasBlockingIssue
                 ? missingGit
                   ? t('connection.missingGitTitle')
-                  : t('connection.installed')
-                : t('connection.notInstalled')}
+                  : t('connection.unavailableTitle')
+                : t('connection.bundledTitle')}
             </DialogTitle>
             <DialogDescription>
-              {connected
+              {hasBlockingIssue
                 ? missingGit
                   ? t('connection.missingGitDesc')
-                  : t('connection.readyDesc', { version: status?.version ?? '' })
-                : t('connection.requiredDesc')}
+                  : t('connection.unavailableDesc')
+                : t('connection.bundledDesc', { version: status?.version ?? '' })}
             </DialogDescription>
           </DialogHeader>
 
           {connected ? (
             <div className="space-y-3 text-sm">
-              <div className={cn(
-                "flex items-center gap-3 rounded-lg px-4 py-3",
-                updateAvailable ? "bg-status-warning-muted" : "bg-status-success-muted"
-              )}>
-                <span className={cn(
-                  "block h-2.5 w-2.5 shrink-0 rounded-full",
-                  updateAvailable ? "bg-status-warning" : "bg-status-success"
-                )} />
+              {/* Bundled status card */}
+              <div className="flex items-center gap-3 rounded-lg bg-status-success-muted px-4 py-3">
+                <span className="block h-2.5 w-2.5 shrink-0 rounded-full bg-status-success" />
                 <div className="flex-1 min-w-0">
-                  <p className={cn("font-medium", updateAvailable ? "text-status-warning-foreground" : "text-status-success-foreground")}>
-                    {updateAvailable ? t('connection.updateAvailable') : t('connection.active')}
+                  <p className="font-medium text-status-success-foreground">
+                    {t('connection.bundledActive')}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {updateAvailable && status?.latestVersion
-                      ? t('connection.versionCompare', { current: extractVersion(status?.version ?? ''), latest: extractVersion(status.latestVersion) })
-                      : t('connection.version', { version: status?.version ?? '' })}
-                    {status?.installType && ` (${INSTALL_TYPE_LABELS[status.installType] || status.installType})`}
+                    {t('connection.version', { version: status?.version ?? '' })}
+                    {installTypeLabel && ` (${installTypeLabel})`}
                   </p>
                   {status?.binaryPath && (
-                    <p className="text-xs text-muted-foreground font-mono">{status.binaryPath}</p>
+                    <p className="text-xs text-muted-foreground font-mono break-all">
+                      {status.binaryPath}
+                    </p>
                   )}
                 </div>
               </div>
 
-              {/* Upgrade section — shown for npm/bun (confirmed update) or homebrew/winget (manual channel) */}
-              {showUpgrade && (
-                <div className="space-y-2">
-                  {!updateAvailable && manualUpdateChannel && (
-                    <p className="text-xs text-muted-foreground">
-                      {t('connection.manualUpdateHint')}
-                    </p>
-                  )}
-                  {upgradeResult ? (
-                    <div className={cn(
-                      "rounded-lg px-4 py-3 text-xs",
-                      upgradeResult.success ? "bg-status-success-muted text-status-success-foreground" : "bg-status-error-muted text-status-error-foreground"
-                    )}>
-                      <p className="font-medium">
-                        {upgradeResult.success ? t('connection.upgradeSuccess') : t('connection.upgradeFailed')}
-                      </p>
-                      {!upgradeResult.success && upgradeResult.output && (
-                        <pre className="mt-1 whitespace-pre-wrap text-muted-foreground">{upgradeResult.output}</pre>
-                      )}
-                    </div>
-                  ) : (
-                    <Button
-                      onClick={handleUpgrade}
-                      disabled={upgrading}
-                      className="w-full"
-                      size="sm"
-                    >
-                      {upgrading ? t('connection.upgrading') : t(updateAvailable ? 'connection.upgradeButton' : 'connection.checkUpgrade')}
-                    </Button>
-                  )}
-                </div>
-              )}
-
-              {/* Conflict warning */}
-              {hasConflicts && (
-                <div className="rounded-lg bg-status-warning-muted px-4 py-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Warning size={16} className="text-status-warning-foreground shrink-0" />
-                    <p className="font-medium text-status-warning-foreground text-xs">
-                      {t('connection.conflictWarning')}
-                    </p>
-                  </div>
+              {/* Informational note: other user-level installs detected */}
+              {hasOtherInstalls && (
+                <div className="rounded-lg bg-muted px-4 py-3 space-y-2">
+                  <p className="text-xs font-medium">
+                    {t('connection.otherInstallsTitle')}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('connection.otherInstallsHint')}
+                  </p>
                   <div className="text-xs text-muted-foreground space-y-1">
-                    {status?.otherInstalls?.map((inst, i) => {
-                      const advice = getUninstallAdvice(inst.type);
-                      return (
-                        <div key={i} className="space-y-0.5">
-                          <p>
-                            <code className="bg-muted px-1 rounded">{inst.path}</code>
-                            {" "}({INSTALL_TYPE_LABELS[inst.type]} {inst.version})
-                          </p>
-                          {advice && (
-                            <p>{t('connection.conflictRemove')}: <code className="bg-muted px-1 rounded">{advice}</code></p>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {status?.otherInstalls?.map((inst, i) => (
+                      <div key={i} className="space-y-0.5">
+                        <p className="font-mono break-all">
+                          <code className="bg-background px-1 rounded">{inst.path}</code>
+                          {" "}({INSTALL_TYPE_LABELS[inst.type] ?? inst.type}
+                          {inst.version ? ` v${inst.version}` : ''})
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Git Bash missing — critical on Windows, causes exit code 1 */}
+              {/* Git Bash missing — still a real blocker on Windows */}
               {missingGit && (
                 <div className="rounded-lg bg-status-error-muted px-4 py-3 space-y-2">
                   <div className="flex items-center gap-2">
@@ -426,51 +298,20 @@ export function ConnectionStatus() {
               )}
             </div>
           ) : (
-            <div className="space-y-4 text-sm">
+            <div className="space-y-3 text-sm">
               <div className="flex items-center gap-3 rounded-lg bg-status-error-muted px-4 py-3">
                 <span className="block h-2.5 w-2.5 shrink-0 rounded-full bg-status-error" />
-                <p className="font-medium text-status-error-foreground">{t('connection.notDetected')}</p>
+                <p className="font-medium text-status-error-foreground">
+                  {t('connection.unavailableTitle')}
+                </p>
               </div>
-
-              <div>
-                <h4 className="font-medium mb-1.5">1. {t('connection.installClaude')}</h4>
-                {navigator.platform?.startsWith('Win') ? (
-                  <code className="block rounded-md bg-muted px-3 py-2 text-xs">
-                    irm https://claude.ai/install.ps1 | iex
-                  </code>
-                ) : (
-                  <code className="block rounded-md bg-muted px-3 py-2 text-xs">
-                    curl -fsSL https://claude.ai/install.sh | bash
-                  </code>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-medium mb-1.5">2. Authenticate</h4>
-                <code className="block rounded-md bg-muted px-3 py-2 text-xs">
-                  claude login
-                </code>
-              </div>
-
-              <div>
-                <h4 className="font-medium mb-1.5">3. Verify Installation</h4>
-                <code className="block rounded-md bg-muted px-3 py-2 text-xs">
-                  claude --version
-                </code>
-              </div>
-
-              {isElectron && (
-                <div className="pt-2 border-t">
-                  <Button
-                    onClick={() => {
-                      setDialogOpen(false);
-                      setWizardOpen(true);
-                    }}
-                    className="w-full"
-                  >
-                    {t('connection.installAuto')}
-                  </Button>
-                </div>
+              <p className="text-xs text-muted-foreground">
+                {t('connection.unavailableDesc')}
+              </p>
+              {status?.binaryPath && (
+                <p className="text-xs text-muted-foreground font-mono break-all">
+                  {status.binaryPath}
+                </p>
               )}
             </div>
           )}
@@ -485,12 +326,6 @@ export function ConnectionStatus() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <InstallWizard
-        open={wizardOpen}
-        onOpenChange={handleWizardOpenChange}
-        onInstallComplete={handleInstallComplete}
-      />
     </>
   );
 }

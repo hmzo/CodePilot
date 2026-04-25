@@ -3,28 +3,13 @@
  * Exposed via contextBridge.exposeInMainWorld('electronAPI', ...) in electron/preload.ts.
  */
 
-interface ClaudeInstallDetection {
-  path: string;
-  version: string | null;
-  type: 'native' | 'homebrew' | 'npm' | 'bun' | 'unknown';
-}
-
 interface ElectronInstallAPI {
-  checkPrerequisites: () => Promise<{
-    hasClaude: boolean;
-    claudeVersion?: string;
-    claudePath?: string;
-    claudeInstallType?: 'native' | 'homebrew' | 'npm' | 'bun' | 'unknown';
-    otherInstalls?: ClaudeInstallDetection[];
-    hasGit?: boolean;
-    platform?: string;
-  }>;
-  start: () => Promise<void>;
-  cancel: () => Promise<void>;
-  getLogs: () => Promise<string[]>;
+  /**
+   * Install Git for Windows via winget. Only meaningful on Windows; Claude
+   * Code itself ships bundled inside CodePilot so there is no Claude install
+   * action exposed here.
+   */
   installGit: () => Promise<{ success: boolean; output?: string; error?: string }>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onProgress: (callback: (data: any) => void) => () => void;
 }
 
 interface UpdateStatusEvent {

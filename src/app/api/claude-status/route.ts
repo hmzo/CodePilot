@@ -1,43 +1,13 @@
 import { NextResponse } from 'next/server';
-import { findClaudeBinary, getClaudeVersion, findAllClaudeBinaries, classifyClaudePath, isWindows, findGitBash, isWingetInstall } from '@/lib/platform';
+import {
+  findClaudeBinary,
+  getClaudeVersion,
+  findAllClaudeBinaries,
+  classifyClaudePath,
+  isWindows,
+  findGitBash,
+} from '@/lib/platform';
 import type { ClaudeInstallInfo, ClaudeInstallType } from '@/lib/platform';
-
-/** Latest version cache */
-let cachedLatestVersion: string | null = null;
-let cachedLatestVersionTimestamp = 0;
-let lastFetchFailed = false;
-const LATEST_VERSION_TTL = 60 * 60 * 1000; // 60 minutes on success
-const LATEST_VERSION_FAIL_TTL = 5 * 60 * 1000; // 5 minutes on failure (backoff)
-
-async function fetchLatestVersion(): Promise<string | null> {
-  const now = Date.now();
-  const ttl = lastFetchFailed ? LATEST_VERSION_FAIL_TTL : LATEST_VERSION_TTL;
-  if (cachedLatestVersionTimestamp > 0 && now - cachedLatestVersionTimestamp < ttl) {
-    return cachedLatestVersion;
-  }
-  try {
-    const res = await fetch('https://registry.npmjs.org/@anthropic-ai/claude-code/latest', {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) {
-      lastFetchFailed = true;
-      cachedLatestVersionTimestamp = now;
-      return cachedLatestVersion;
-    }
-    const data = await res.json();
-    const version = data.version as string | undefined;
-    if (version) {
-      cachedLatestVersion = version;
-      lastFetchFailed = false;
-    }
-    cachedLatestVersionTimestamp = now;
-    return cachedLatestVersion;
-  } catch {
-    lastFetchFailed = true;
-    cachedLatestVersionTimestamp = now;
-    return cachedLatestVersion;
-  }
-}
 
 /** Minimum CLI versions for optional features */
 const FEATURE_MIN_VERSIONS: Record<string, string> = {
@@ -65,40 +35,56 @@ function versionGte(a: string, b: string): boolean {
   return true;
 }
 
+/**
+ * Status route — Claude Code is bundled with CodePilot, so the install
+ * resolution path is fixed and the only thing this endpoint actually probes
+ * at runtime is the bundled binary's `--version` output (cheap sanity check).
+ *
+ * `otherInstalls` is still surfaced so the UI can show users which user-level
+ * `claude` binaries are floating around — purely informational, never used
+ * for resolution.
+ */
 export async function GET() {
   try {
     const claudePath = findClaudeBinary();
 
-    // On Windows, check for Git Bash (bash.exe) using the same detection as the SDK runtime.
-    // This avoids false negatives when Git is installed but git.exe isn't on PATH.
+    // On Windows, Git Bash is required by the Claude Code runtime for shell
+    // tool calls. The bundled binary still depends on a host-installed bash.
     const missingGit = isWindows && findGitBash() === null;
 
     if (!claudePath) {
-      const w: string[] = [];
-      if (missingGit) w.push('Git Bash not found — some features may not work');
-      return NextResponse.json({ connected: false, version: null, binaryPath: null, installType: null, otherInstalls: [], missingGit, warnings: w, features: {} });
+      // Should be unreachable in production: the bundled binary is shipped
+      // inside the .app/installer. Treat as a hard error if the file is
+      // missing (e.g. user manually deleted Resources/claude/).
+      const warnings: string[] = ['Bundled Claude Code binary is missing from the install — please reinstall CodePilot.'];
+      if (missingGit) warnings.push('Git Bash not found — some features may not work');
+      return NextResponse.json({
+        connected: false,
+        version: null,
+        binaryPath: null,
+        installType: null,
+        otherInstalls: [],
+        missingGit,
+        warnings,
+        features: {},
+      });
     }
+
     const version = await getClaudeVersion(claudePath);
-    let installType: ClaudeInstallType = classifyClaudePath(claudePath);
+    const installType: ClaudeInstallType = classifyClaudePath(claudePath);
 
-    // On Windows, native and WinGet install to the same path.
-    // Check WinGet's package list to distinguish them (cached).
-    if (isWindows && (installType === 'native' || installType === 'unknown')) {
-      if (await isWingetInstall()) {
-        installType = 'winget';
-      }
-    }
-
-    // Detect other installations for conflict warning
+    // User-installed `claude` binaries are listed read-only so the user
+    // knows they exist; we never resolve to them.
     let otherInstalls: ClaudeInstallInfo[] = [];
     try {
       const all = findAllClaudeBinaries();
       otherInstalls = all.filter(i => i.path !== claudePath);
     } catch {
-      // non-critical — don't fail the status check
+      // non-critical
     }
 
-    // Detect supported features based on CLI version
+    // Feature detection still depends on the bundled binary's version since
+    // some UI affordances are gated by what the binary supports.
     const features: Record<string, boolean> = {};
     if (version) {
       for (const [feature, minVersion] of Object.entries(FEATURE_MIN_VERSIONS)) {
@@ -106,36 +92,17 @@ export async function GET() {
       }
     }
 
-    // Fetch latest version from npm registry (non-blocking).
-    // Only npm/bun channels can be reliably compared against the npm registry.
-    // Native auto-updates in background; Homebrew and WinGet are independent
-    // distribution channels whose versions may lag behind npm, causing false
-    // positives if we compare them against the npm registry version.
-    const latestVersion = await fetchLatestVersion();
-    const npmTrackedChannels = new Set<string>(['npm', 'bun']);
-    const updateAvailable = !!(npmTrackedChannels.has(installType) && version && latestVersion && !versionGte(version, latestVersion));
-    // Homebrew/WinGet need manual updates but we can't reliably detect if
-    // an update exists. Flag them so the UI can show an upgrade entry point.
-    const manualUpdateChannels = new Set<string>(['homebrew', 'winget']);
-    const manualUpdateChannel = manualUpdateChannels.has(installType);
-
-    // Build warnings array for non-blocking issues
     const warnings: string[] = [];
     if (missingGit) {
       warnings.push('Git Bash not found — some features may not work');
     }
     if (otherInstalls.length > 0) {
-      warnings.push(`${otherInstalls.length} other Claude CLI installation(s) detected`);
+      warnings.push(`${otherInstalls.length} user-installed Claude CLI detected (informational — CodePilot uses its bundled copy)`);
     }
 
     return NextResponse.json({
-      // connected = CLI found and returns a version. Git Bash missing is a
-      // warning, not a blocker — the CLI itself is still usable for basic ops.
       connected: !!version,
       version,
-      latestVersion,
-      updateAvailable,
-      manualUpdateChannel,
       binaryPath: claudePath,
       installType,
       otherInstalls,
@@ -144,6 +111,15 @@ export async function GET() {
       features,
     });
   } catch {
-    return NextResponse.json({ connected: false, version: null, binaryPath: null, installType: null, otherInstalls: [], missingGit: false, warnings: [], features: {} });
+    return NextResponse.json({
+      connected: false,
+      version: null,
+      binaryPath: null,
+      installType: null,
+      otherInstalls: [],
+      missingGit: false,
+      warnings: [],
+      features: {},
+    });
   }
 }
