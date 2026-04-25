@@ -66,7 +66,11 @@ function defaultViewMode(filePath: string): PreviewViewMode {
   return RENDERED_EXTENSIONS.has(ext) ? "rendered" : "source";
 }
 
-const LG_BREAKPOINT = 1024;
+// Sidebar reveal breakpoint — keep in sync with the Tailwind class on
+// ChatListPanel's <aside> ("hidden md:flex"). Lowered from lg(1024) to md(768)
+// so embedded webviews (Cursor preview pane, split editors) and tablets still
+// get the conversation list. Pure mobile (<768) keeps the focused chat view.
+const LG_BREAKPOINT = 768;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
