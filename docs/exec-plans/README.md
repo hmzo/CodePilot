@@ -51,7 +51,6 @@
 | active/memory-system-v3.md | 记忆系统 V3 / 心跳协议 | 进行中 |
 | active/open-issues-2026-03-12.md | 公开问题跟踪 | 滚动更新 |
 | active/qq-bridge-channel.md | QQ Bridge 通道 | 进行中 |
-| active/remove-provider-system.md | 删除 provider 子系统，强制使用 ~/.claude 配置；下线辅助 AI 功能；模型选择器硬编码 | Phase 1-4 已完成，Phase 5-6 收尾中 |
 | active/site-and-docs.md | 官网 + 文档站（apps/site） | Phase 0-1 进行中 |
 | active/unified-context-layer.md | 统一上下文层 + 浮窗助理 + 产品架构演进 | Phase 1-3 已完成，Phase 4-5 待开始 |
 | active/weixin-bridge-channel.md | 微信 Bridge 通道一次性交付方案 | One Shot 待开始 |
@@ -65,5 +64,6 @@
 | completed/engineering-quality-assurance.md | 工程质量保障体系（Harness Engineering）— 验证闭环、AI 文档、CDP、执行计划 | 2026-03-04 |
 | completed/provider-governance.md | 服务商系统治理（已废弃，整套 provider 系统已删除） | 2026-04-25 |
 | completed/provider-resolver-refactor.md | 服务商解析器重构（已废弃，整套 provider 系统已删除） | 2026-04-25 |
+| completed/remove-provider-system.md | 删除 provider 子系统，CodePilot 退化为 ~/.claude GUI 客户端；模型选择器硬编码；辅助 AI 功能整体下线 | 2026-04-25 |
 | completed/scheduled-tasks-notifications.md | 定时任务 + 通知系统（已废弃，TaskScheduler 随 provider 子系统下线） | 2026-04-25 |
 | completed/skills-mcp-tooling-fix.md | Skills + MCP 工具链修复 | 已完成 |

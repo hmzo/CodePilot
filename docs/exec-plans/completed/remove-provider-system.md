@@ -2,6 +2,9 @@
 
 > 创建时间：2026-04-25
 > 最后更新：2026-04-25
+> 完成时间：2026-04-25
+> 产品思考见 [docs/insights/remove-provider.md](../../insights/remove-provider.md)
+> 落地 commit：`eec000c` — refactor!: 删除 provider 子系统，CodePilot 退化为 Claude Code GUI 客户端
 
 ## 目标
 
@@ -26,8 +29,8 @@
 | Phase 3.2 | 删除 api/workspace/{onboarding,checkin,quick-actions} + api/tasks + api/media/jobs/plan | ✅ 已完成 | 路由全部删除 |
 | Phase 3.3 | 删除 QuickActions 组件 + AssistantWorkspaceSection 中的 onboarding/checkin/scheduler 入口 + 批量生图 plan 阶段 UI | ✅ 已完成 | 对应 i18n 键全部清理 |
 | Phase 4 | Bridge 配置精简：仅保留 bridge_default_model 文本框 | ✅ 已完成 | `bridge_default_provider_id` 从白名单和 channel-router 删除 |
-| Phase 5 | 测试 / 文档清理 / 移到 completed/ | 📋 进行中 | 测试 + handover 文档已清理；ARCHITECTURE / README 待最终核对 |
-| Phase 6 | 收尾：完整测试 + DB 重置验证 + 产品思考文档 | 📋 待开始 | |
+| Phase 5 | 测试 / 文档清理 / 移到 completed/ | ✅ 已完成 | 7 个过期单测删除；4 个 handover 文档删除；其余文档加 2026-04-25 下线注记；3 个旧 exec-plan 移到 completed/；README / ARCHITECTURE 多模型卖点更新 |
+| Phase 6 | 收尾：完整测试 + DB 重置验证 + 产品思考文档 + commit | ✅ 已完成 | npm run test 463/463 / test:smoke 5/5 / 全新 DB 初始化 schema 干净 / docs/insights/remove-provider.md 写完 / commit `eec000c` 落地 |
 
 ## 决策日志
 
