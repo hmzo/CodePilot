@@ -81,6 +81,9 @@ nsis:
   createStartMenuShortcut: true
   deleteAppDataOnUninstall: false
   artifactName: "${productName}.Setup.${version}.${ext}"
+  # 默认安装语言改为简体中文（LCID 2052）。
+  # 多语言安装包仍按系统语言自动选择，仅当系统语言未匹配时回退到中文。
+  language: "2052"
 linux:
   icon: build/icon.png
   category: Development
