@@ -93,6 +93,7 @@ export {
   CloudArrowUp,
   ArrowsInLineVertical,
   PushPin,
+  QrCode,
 } from "@phosphor-icons/react";
 
 export type { Icon, IconProps } from "@phosphor-icons/react";

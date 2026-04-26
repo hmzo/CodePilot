@@ -67,3 +67,4 @@ apps/site/node_modules/
 
 # bundled Claude Code native binary (downloaded by scripts/fetch-claude-binary.js)
 /vendor/
+.gstack/

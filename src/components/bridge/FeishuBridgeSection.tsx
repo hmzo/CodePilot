@@ -11,7 +11,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { SpinnerGap, CheckCircle, Warning } from "@/components/ui/icon";
+import {
+  CaretDown,
+  CaretUp,
+  CheckCircle,
+  QrCode,
+  SpinnerGap,
+  Warning,
+} from "@/components/ui/icon";
 import { useTranslation } from "@/hooks/useTranslation";
 import { SettingsCard } from "@/components/patterns/SettingsCard";
 import { FieldRow } from "@/components/patterns/FieldRow";
@@ -40,6 +47,8 @@ const DEFAULT_SETTINGS: FeishuBridgeSettings = {
   bridge_feishu_group_allow_from: "",
   bridge_feishu_require_mention: "false",
 };
+
+type QrStatus = "" | "waiting" | "scanned" | "confirmed" | "expired" | "failed";
 
 /** SaveButton: shows Save / Saving / Saved based on dirty + saving state. */
 function SaveButton({
@@ -79,6 +88,19 @@ export function FeishuBridgeSection() {
   const [credentialsSaving, setCredentialsSaving] = useState(false);
   const [credentialsDirty, setCredentialsDirty] = useState(false);
   const savedCredentials = useRef({ appId: "", appSecret: "", domain: "feishu" });
+
+  // ── Manual entry toggle ──
+  const [manualOpen, setManualOpen] = useState(false);
+
+  // ── QR registration state ──
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [qrSessionId, setQrSessionId] = useState<string | null>(null);
+  const [qrStatus, setQrStatus] = useState<QrStatus>("");
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [qrDomainSwitched, setQrDomainSwitched] = useState(false);
+  const [qrBridgeError, setQrBridgeError] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Access & Behavior state ──
   const [allowFrom, setAllowFrom] = useState("");
@@ -139,7 +161,6 @@ export function FeishuBridgeSection() {
         setGroupAllowFrom(s.bridge_feishu_group_allow_from);
         setRequireMention(s.bridge_feishu_require_mention === "true");
 
-        // Snapshot as "saved" baseline
         savedCredentials.current = {
           appId: s.bridge_feishu_app_id,
           appSecret: s.bridge_feishu_app_secret,
@@ -164,6 +185,15 @@ export function FeishuBridgeSection() {
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
+
+  // Cleanup poll timer on unmount
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+      }
+    };
+  }, []);
 
   // ── Save helpers ──
   const saveToApi = async (updates: Partial<FeishuBridgeSettings>) => {
@@ -264,6 +294,146 @@ export function FeishuBridgeSection() {
     }
   };
 
+  // ── QR Registration Flow ──
+  const cancelQrSession = useCallback(async (sessionId: string | null) => {
+    if (!sessionId) return;
+    try {
+      await fetch("/api/settings/feishu/register/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+    } catch {
+      // best-effort cleanup
+    }
+  }, []);
+
+  const closeQrPanel = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    if (qrSessionId) {
+      void cancelQrSession(qrSessionId);
+    }
+    setQrImage(null);
+    setQrSessionId(null);
+    setQrStatus("");
+    setQrError(null);
+    setQrDomainSwitched(false);
+    setQrBridgeError(null);
+  }, [cancelQrSession, qrSessionId]);
+
+  const pollQr = useCallback(
+    async (sessionId: string) => {
+      try {
+        const res = await fetch("/api/settings/feishu/register/poll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+        const data = (await res.json().catch(() => null)) as
+          | {
+              status?: QrStatus;
+              domain?: string;
+              domain_switched?: boolean;
+              app_id?: string;
+              error?: string;
+              bridge_restart_error?: string;
+            }
+          | null;
+        if (!res.ok || !data?.status) {
+          return;
+        }
+
+        setQrStatus(data.status);
+        setQrError(data.error || null);
+        setQrDomainSwitched(Boolean(data.domain_switched));
+        setQrBridgeError(data.bridge_restart_error || null);
+
+        if (data.status === "confirmed") {
+          if (pollTimerRef.current) {
+            clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+          }
+          // Settings on the server now hold the new credentials.
+          // Pull them into the form so the UI reflects reality and
+          // immediately verify the bot.
+          await fetchSettings();
+          // Auto-close after a brief success display, then verify.
+          setTimeout(async () => {
+            setQrImage(null);
+            setQrSessionId(null);
+            setQrStatus("");
+            setQrError(null);
+            setQrDomainSwitched(false);
+            setQrBridgeError(null);
+            await handleVerify();
+          }, 1500);
+        } else if (data.status === "failed" || data.status === "expired") {
+          if (pollTimerRef.current) {
+            clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+          }
+        }
+      } catch {
+        // network blip — let the next interval retry
+      }
+    },
+    // handleVerify is defined above and stable enough for our purposes;
+    // we intentionally exclude it to avoid restarting the timer on every
+    // appId/appSecret change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fetchSettings],
+  );
+
+  const startQrRegistration = async () => {
+    setQrLoading(true);
+    setQrError(null);
+    setQrBridgeError(null);
+    setQrDomainSwitched(false);
+    try {
+      const res = await fetch("/api/settings/feishu/register/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ env: "prod" }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | {
+            session_id?: string;
+            qr_image?: string;
+            interval?: number;
+            error?: string;
+          }
+        | null;
+
+      if (!res.ok || !data?.session_id || !data.qr_image) {
+        setQrStatus("failed");
+        setQrError(data?.error || t("feishu.qrStartFailed"));
+        return;
+      }
+
+      setQrImage(data.qr_image);
+      setQrSessionId(data.session_id);
+      setQrStatus("waiting");
+      // Start polling — server enforces upstream interval, client polls a
+      // bit faster so status changes feel responsive.
+      const intervalMs = Math.max(1500, (data.interval ?? 3) * 1000 - 1000);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      const sid = data.session_id;
+      pollTimerRef.current = setInterval(() => pollQr(sid), intervalMs);
+    } catch (err) {
+      setQrStatus("failed");
+      setQrError(err instanceof Error ? err.message : t("feishu.qrStartFailed"));
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const credentialsLabel = appId
+    ? t("feishu.configuredAs", { appId })
+    : t("feishu.notConfigured");
+
   return (
     <div className="max-w-3xl space-y-6">
       {/* ── App Credentials ── */}
@@ -271,80 +441,138 @@ export function FeishuBridgeSection() {
         title={t("feishu.credentials")}
         description={t("feishu.credentialsDesc")}
       >
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">
-              {t("feishu.appId")}
-            </label>
-            <Input
-              value={appId}
-              onChange={(e) => setAppId(e.target.value)}
-              placeholder="cli_xxxxxxxxxx"
-              className="font-mono text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">
-              {t("feishu.appSecret")}
-            </label>
-            <Input
-              type="password"
-              value={appSecret}
-              onChange={(e) => setAppSecret(e.target.value)}
-              placeholder="xxxxxxxxxxxxxxxxxxxxxxxx"
-              className="font-mono text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">
-              {t("feishu.domain")}
-            </label>
-            <Select value={domain} onValueChange={setDomain}>
-              <SelectTrigger className="w-full text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="feishu">
-                  {t("feishu.domainFeishu")}
-                </SelectItem>
-                <SelectItem value="lark">
-                  {t("feishu.domainLark")}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t("feishu.domainHint")}
-            </p>
+        {/* Current state row */}
+        <div className="flex items-center justify-between rounded-md border border-border/30 px-3 py-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {appId ? (
+              <CheckCircle size={16} className="shrink-0 text-emerald-500" />
+            ) : (
+              <Warning size={16} className="shrink-0 text-muted-foreground" />
+            )}
+            <p className="text-sm font-mono truncate">{credentialsLabel}</p>
+            {appId && (
+              <span className="text-xs text-muted-foreground shrink-0">
+                {domain === "lark"
+                  ? t("feishu.domainLark")
+                  : t("feishu.domainFeishu")}
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <SaveButton
-            dirty={credentialsDirty}
-            saving={credentialsSaving}
-            onClick={handleSaveCredentials}
-            label={t("common.save")}
-            savedLabel={t("feishu.saved")}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleVerify}
-            disabled={verifying || !appId}
-          >
-            {verifying ? (
-              <SpinnerGap
-                size={14}
-                className="animate-spin mr-1.5"
+        {/* Primary action: QR register */}
+        {!qrImage ? (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={startQrRegistration}
+              disabled={qrLoading}
+            >
+              {qrLoading ? (
+                <SpinnerGap size={14} className="animate-spin mr-1.5" />
+              ) : (
+                <QrCode size={14} className="mr-1.5" />
+              )}
+              {appId ? t("feishu.qrReregister") : t("feishu.qrRegister")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleVerify}
+              disabled={verifying || !appId}
+            >
+              {verifying ? (
+                <SpinnerGap
+                  size={14}
+                  className="animate-spin mr-1.5"
+                />
+              ) : null}
+              {t("feishu.verify")}
+            </Button>
+          </div>
+        ) : (
+          <div className="rounded-md border border-border/50 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium flex items-center gap-2">
+                <QrCode size={16} />
+                {t("feishu.qrRegisterTitle")}
+              </h3>
+              <Button size="sm" variant="ghost" onClick={closeQrPanel}>
+                {t("common.cancel")}
+              </Button>
+            </div>
+
+            <div className="flex justify-center">
+              <img
+                src={qrImage}
+                alt="Feishu QR Code"
+                className="w-48 h-48 rounded-md border border-border/30 bg-white p-2"
               />
-            ) : null}
-            {t("feishu.verify")}
-          </Button>
-        </div>
+            </div>
 
-        {verifyResult && (
+            <p className="text-xs text-center text-muted-foreground">
+              {t("feishu.qrRegisterHint")}
+            </p>
+
+            <div className="text-center">
+              {qrStatus === "waiting" && (
+                <StatusBanner variant="info">
+                  <SpinnerGap size={14} className="animate-spin mr-1.5 inline" />
+                  {t("feishu.qrWaiting")}
+                </StatusBanner>
+              )}
+              {qrStatus === "scanned" && (
+                <StatusBanner variant="info">
+                  <CheckCircle size={14} className="mr-1.5 inline text-primary" />
+                  {t("feishu.qrScanned")}
+                </StatusBanner>
+              )}
+              {qrStatus === "confirmed" && (
+                <StatusBanner variant="success">
+                  <CheckCircle size={14} className="mr-1.5 inline" />
+                  {t("feishu.qrConfirmed")}
+                </StatusBanner>
+              )}
+              {qrStatus === "expired" && (
+                <div className="space-y-2">
+                  <StatusBanner variant="warning">
+                    <Warning size={14} className="mr-1.5 inline" />
+                    {t("feishu.qrExpired")}
+                  </StatusBanner>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      closeQrPanel();
+                      void startQrRegistration();
+                    }}
+                  >
+                    {t("feishu.qrRefresh")}
+                  </Button>
+                </div>
+              )}
+              {qrStatus === "failed" && (
+                <StatusBanner variant="error">
+                  <Warning size={14} className="mr-1.5 inline" />
+                  {qrError || t("feishu.qrFailed")}
+                </StatusBanner>
+              )}
+              {qrDomainSwitched && qrStatus !== "confirmed" && (
+                <StatusBanner variant="info" className="mt-2">
+                  {t("feishu.qrSwitchedToLark")}
+                </StatusBanner>
+              )}
+              {qrBridgeError && (
+                <StatusBanner variant="warning" className="mt-2">
+                  <Warning size={14} className="mr-1.5 inline" />
+                  {`${t("feishu.qrConfirmedRestartFailed")}: ${qrBridgeError}`}
+                </StatusBanner>
+              )}
+            </div>
+          </div>
+        )}
+
+        {verifyResult && !qrImage && (
           <StatusBanner
             variant={verifyResult.ok ? "success" : "error"}
             icon={verifyResult.ok ? <CheckCircle size={16} className="shrink-0" /> : <Warning size={16} className="shrink-0" />}
@@ -352,6 +580,79 @@ export function FeishuBridgeSection() {
             {verifyResult.message}
           </StatusBanner>
         )}
+
+        {/* Manual entry — collapsible advanced section */}
+        <div className="border-t pt-3">
+          <button
+            type="button"
+            onClick={() => setManualOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {manualOpen ? <CaretUp size={14} /> : <CaretDown size={14} />}
+            {t("feishu.manualEntry")}
+          </button>
+          {manualOpen && (
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                {t("feishu.manualEntryDesc")}
+              </p>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  {t("feishu.appId")}
+                </label>
+                <Input
+                  value={appId}
+                  onChange={(e) => setAppId(e.target.value)}
+                  placeholder="cli_xxxxxxxxxx"
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  {t("feishu.appSecret")}
+                </label>
+                <Input
+                  type="password"
+                  value={appSecret}
+                  onChange={(e) => setAppSecret(e.target.value)}
+                  placeholder="xxxxxxxxxxxxxxxxxxxxxxxx"
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  {t("feishu.domain")}
+                </label>
+                <Select value={domain} onValueChange={setDomain}>
+                  <SelectTrigger className="w-full text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="feishu">
+                      {t("feishu.domainFeishu")}
+                    </SelectItem>
+                    <SelectItem value="lark">
+                      {t("feishu.domainLark")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t("feishu.domainHint")}
+                </p>
+              </div>
+
+              <SaveButton
+                dirty={credentialsDirty}
+                saving={credentialsSaving}
+                onClick={handleSaveCredentials}
+                label={t("common.save")}
+                savedLabel={t("feishu.saved")}
+              />
+            </div>
+          )}
+        </div>
       </SettingsCard>
 
       {/* ── Access & Behavior ── */}
