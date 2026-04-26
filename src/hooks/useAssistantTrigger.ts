@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Message, FileAttachment } from '@/types';
-// getLocalDateString removed — heartbeat no longer auto-triggers
 import { startStream } from '@/lib/stream-session-manager';
 
 // ── localStorage heartbeat for cross-tab liveness detection ──
@@ -162,16 +161,13 @@ export function useAssistantTrigger({
       }
       if (state.hookTriggeredSessionId === sessionId && initialMessages.length > 0) return;
 
-      // Auto-trigger for:
-      // 1. Buddy welcome: no buddy + empty session → adoption prompt (takes priority)
-      // 2. Heartbeat: server says overdue + has buddy + empty session → full HEARTBEAT.md check
-      // Buddy welcome takes priority: heartbeat defers until buddy exists.
-      // Once buddy is hatched and user opens a new empty session, heartbeat fires.
-      const needsBuddyWelcome = !state.buddy && initialMessages.length === 0;
-      // Only trigger heartbeat when buddy exists — avoids collision with buddy-welcome
-      const needsHeartbeat = !!data.needsHeartbeat && !!state.buddy && initialMessages.length === 0;
+      // Auto-trigger only for onboarding: incomplete onboarding + empty session
+      // → AI proactively introduces itself per the onboarding instructions in the
+      // system prompt.  Buddy welcome and heartbeat triggers were removed alongside
+      // the buddy/heartbeat features.
+      const needsOnboarding = !state.onboardingComplete && initialMessages.length === 0;
 
-      if (!needsBuddyWelcome && !needsHeartbeat) return;
+      if (!needsOnboarding) return;
 
       // Mark fired so we don't re-trigger on focus/re-render
       assistantTriggerFiredRef.current = true;
@@ -215,12 +211,9 @@ export function useAssistantTrigger({
       }
 
       // Use autoTrigger: the message is invisible (no user bubble, no title update)
-      const triggerMsg = needsBuddyWelcome
-        ? '请做自我介绍并引导用户领养伙伴。'
-        : '心跳检查';
       startStream({
         sessionId,
-        content: triggerMsg,
+        content: '请做自我介绍并引导用户完成首次设置。',
         mode,
         model: currentModel,
         autoTrigger: true,

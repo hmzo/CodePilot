@@ -5,16 +5,14 @@
  *
  * Tests verify:
  * 1. getLocalDateString returns local (not UTC) date at timezone boundaries
- * 2. needsDailyCheckIn uses local date, not UTC
- * 3. v2→v3 migration normalizes old UTC-style lastCheckInDate
- * 4. getTokenUsageStats buckets by local calendar day
- * 5. localDayStartAsUTC computes correct UTC boundary
+ * 2. getTokenUsageStats buckets by local calendar day
+ * 3. localDayStartAsUTC computes correct UTC boundary
  *
  * Strategy: use process.env.TZ to shift timezone during tests, and pass
  * fixed Date objects rather than calling the same helper to self-verify.
  */
 
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'path';
 import os from 'os';
@@ -27,17 +25,8 @@ process.env.CLAUDE_GUI_DATA_DIR = tmpDir;
 /* eslint-disable @typescript-eslint/no-require-imports */
 const {
   getLocalDateString,
-  getLocalTzOffsetMinutes,
   localDayStartAsUTC,
 } = require('../../lib/utils') as typeof import('../../lib/utils');
-
-const {
-  needsDailyCheckIn,
-  loadState,
-  saveState,
-  initializeWorkspace,
-  migrateStateV2ToV3,
-} = require('../../lib/assistant-workspace') as typeof import('../../lib/assistant-workspace');
 
 const {
   getDb,
@@ -108,192 +97,7 @@ describe('getLocalDateString timezone boundaries', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. needsDailyCheckIn with fixed time at timezone boundary
-// ---------------------------------------------------------------------------
-describe('needsDailyCheckIn timezone boundaries', () => {
-  afterEach(() => restoreTZ());
-
-  it('UTC+9: check-in done as local 2026-03-10, still valid at 08:30 JST', () => {
-    setTZ('Asia/Tokyo');
-    const now = new Date('2026-03-10T00:30:00Z'); // 09:30 JST, still March 10 local
-    const state = { onboardingComplete: true, lastHeartbeatDate: '2026-03-10', lastCheckInDate: '2026-03-10', heartbeatEnabled: true, dailyCheckInEnabled: true, schemaVersion: 5 };
-    assert.equal(needsDailyCheckIn(state, now), false);
-  });
-
-  it('UTC+9: old date from yesterday (both local and UTC) triggers check-in', () => {
-    setTZ('Asia/Tokyo');
-    // now = UTC 2026-03-10 01:00 = JST 2026-03-10 10:00
-    // localToday = '2026-03-10', utcToday = '2026-03-10'
-    // stored '2026-03-09' matches neither → triggers
-    const now = new Date('2026-03-10T01:00:00Z');
-    const state = { onboardingComplete: true, lastHeartbeatDate: '2026-03-09', lastCheckInDate: '2026-03-09', heartbeatEnabled: true, dailyCheckInEnabled: true, schemaVersion: 5 };
-    assert.equal(needsDailyCheckIn(state, now), true);
-  });
-
-  it('UTC+9: at local midnight where utcToday still matches stored, compat suppresses', () => {
-    setTZ('Asia/Tokyo');
-    // now = UTC 2026-03-09 15:00 = JST 2026-03-10 00:00
-    // localToday = '2026-03-10', utcToday = '2026-03-09'
-    // stored '2026-03-09' matches utcToday → compat suppresses (correct:
-    // old code could have written this just hours ago during the same UTC day)
-    const now = new Date('2026-03-09T15:00:00Z');
-    const state = { onboardingComplete: true, lastHeartbeatDate: '2026-03-09', lastCheckInDate: '2026-03-09', heartbeatEnabled: true, dailyCheckInEnabled: true, schemaVersion: 5 };
-    assert.equal(needsDailyCheckIn(state, now), false);
-  });
-
-  it('UTC+8: old UTC date matching utcToday suppresses re-trigger (compat)', () => {
-    setTZ('Asia/Shanghai');
-    // At local 2026-03-10 01:00 (= UTC 2026-03-09 17:00):
-    // Old code wrote '2026-03-09' (UTC). New local date is '2026-03-10'.
-    // Without compat, this would be a spurious re-trigger because the user
-    // DID check in today (local March 10, 1am), but old code wrote UTC date.
-    // The UTC fallback catches this: '2026-03-09' === utcToday → skip.
-    const now = new Date('2026-03-09T17:00:00Z');
-    const state = { onboardingComplete: true, lastHeartbeatDate: '2026-03-09', lastCheckInDate: '2026-03-09', heartbeatEnabled: true, dailyCheckInEnabled: true, schemaVersion: 5 };
-    // utcToday = '2026-03-09' matches stored → should NOT trigger
-    assert.equal(needsDailyCheckIn(state, now), false);
-  });
-
-  it('clearly-past date triggers check-in regardless of compat', () => {
-    setTZ('Asia/Shanghai');
-    const now = new Date('2026-03-10T02:00:00Z'); // local March 10 10:00
-    // localToday = '2026-03-10', utcToday = '2026-03-10'
-    // stored '2026-03-07' matches neither → triggers
-    const state = { onboardingComplete: true, lastHeartbeatDate: '2026-03-07', lastCheckInDate: '2026-03-07', heartbeatEnabled: true, dailyCheckInEnabled: true, schemaVersion: 5 };
-    assert.equal(needsDailyCheckIn(state, now), true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 3. v2→v3 migration normalizes old UTC-style lastCheckInDate
-// ---------------------------------------------------------------------------
-describe('v2→v3 migration', () => {
-  let workDir: string;
-
-  beforeEach(() => {
-    workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-v3-'));
-  });
-
-  afterEach(() => {
-    restoreTZ();
-    fs.rmSync(workDir, { recursive: true, force: true });
-  });
-
-  it('should normalize lastCheckInDate (now lastHeartbeatDate) only if it matches UTC today', () => {
-    setTZ('Asia/Tokyo');
-    const stateDir = path.join(workDir, '.assistant');
-    fs.mkdirSync(stateDir, { recursive: true });
-
-    // Simulate: old v2 state where lastCheckInDate = today's UTC date.
-    // Migration should normalize this to today's local date.
-    const utcToday = new Date().toISOString().slice(0, 10);
-    fs.writeFileSync(
-      path.join(stateDir, 'state.json'),
-      JSON.stringify({
-        onboardingComplete: true,
-        lastCheckInDate: utcToday,
-        schemaVersion: 2,
-      }),
-      'utf-8'
-    );
-
-    migrateStateV2ToV3(workDir);
-
-    const raw = JSON.parse(fs.readFileSync(path.join(stateDir, 'state.json'), 'utf-8'));
-    assert.equal(raw.schemaVersion, 3);
-    // Should be normalized to local today
-    assert.match(raw.lastCheckInDate, /^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it('should leave clearly-past dates untouched so check-in triggers', () => {
-    setTZ('Asia/Tokyo');
-    const stateDir = path.join(workDir, '.assistant');
-    fs.mkdirSync(stateDir, { recursive: true });
-
-    // Old date from 5 days ago — should NOT be overwritten to today
-    fs.writeFileSync(
-      path.join(stateDir, 'state.json'),
-      JSON.stringify({
-        onboardingComplete: true,
-        lastCheckInDate: '2020-01-15',
-        schemaVersion: 2,
-      }),
-      'utf-8'
-    );
-
-    migrateStateV2ToV3(workDir);
-
-    const raw = JSON.parse(fs.readFileSync(path.join(stateDir, 'state.json'), 'utf-8'));
-    assert.equal(raw.schemaVersion, 3);
-    assert.equal(raw.lastCheckInDate, '2020-01-15', 'past date must be preserved');
-  });
-
-  it('should not re-migrate if already v3', () => {
-    const stateDir = path.join(workDir, '.assistant');
-    fs.mkdirSync(stateDir, { recursive: true });
-
-    const v3State = {
-      onboardingComplete: true,
-      lastCheckInDate: '2026-03-10',
-      schemaVersion: 3,
-    };
-    fs.writeFileSync(path.join(stateDir, 'state.json'), JSON.stringify(v3State), 'utf-8');
-
-    migrateStateV2ToV3(workDir);
-
-    const raw = JSON.parse(fs.readFileSync(path.join(stateDir, 'state.json'), 'utf-8'));
-    assert.equal(raw.lastCheckInDate, '2026-03-10', 'should not change v3 state');
-  });
-
-  it('loadState auto-migrates v2 state to v5', () => {
-    const stateDir = path.join(workDir, '.assistant');
-    fs.mkdirSync(stateDir, { recursive: true });
-    // Also need daily dir for v1→v2 migration path
-    fs.mkdirSync(path.join(workDir, 'memory', 'daily'), { recursive: true });
-    fs.mkdirSync(path.join(workDir, 'Inbox'), { recursive: true });
-
-    fs.writeFileSync(
-      path.join(stateDir, 'state.json'),
-      JSON.stringify({
-        onboardingComplete: true,
-        lastCheckInDate: '2026-01-15',
-        schemaVersion: 2,
-      }),
-      'utf-8'
-    );
-
-    const state = loadState(workDir);
-    assert.equal(state.schemaVersion, 5);
-    // Past date should be preserved (migrated to lastHeartbeatDate), not overwritten to today
-    assert.equal(state.lastHeartbeatDate, '2026-01-15');
-    // v4→v5 migration renames dailyCheckInEnabled to heartbeatEnabled (false)
-    assert.equal(state.heartbeatEnabled, false);
-  });
-
-  it('should preserve null lastCheckInDate during migration', () => {
-    const stateDir = path.join(workDir, '.assistant');
-    fs.mkdirSync(stateDir, { recursive: true });
-
-    fs.writeFileSync(
-      path.join(stateDir, 'state.json'),
-      JSON.stringify({
-        onboardingComplete: false,
-        lastCheckInDate: null,
-        schemaVersion: 2,
-      }),
-      'utf-8'
-    );
-
-    migrateStateV2ToV3(workDir);
-
-    const raw = JSON.parse(fs.readFileSync(path.join(stateDir, 'state.json'), 'utf-8'));
-    assert.equal(raw.schemaVersion, 3);
-    assert.equal(raw.lastCheckInDate, null, 'null lastCheckInDate should stay null');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 4. localDayStartAsUTC computes correct UTC boundary
+// 2. localDayStartAsUTC computes correct UTC boundary
 // ---------------------------------------------------------------------------
 describe('localDayStartAsUTC', () => {
   afterEach(() => restoreTZ());

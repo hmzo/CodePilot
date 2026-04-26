@@ -95,20 +95,15 @@ export async function GET() {
     for (const [key, variants] of Object.entries({ soul: soulVariants, user: ['user.md', 'User.md', 'USER.md'], claude: ['claude.md', 'Claude.md', 'CLAUDE.md'], memory: memoryVariants })) {
       fileHealth[key] = variants.some(v => fs.existsSync(path.join(workspacePath, v)));
     }
-    fileHealth['heartbeat'] = fs.existsSync(path.join(workspacePath, 'HEARTBEAT.md'));
 
     return NextResponse.json({
       configured: true,
       name: assistantName || '',
       styleHint,
       onboardingComplete: state.onboardingComplete,
-      lastHeartbeatDate: state.lastHeartbeatDate,
-      heartbeatEnabled: state.heartbeatEnabled,
       memoryCount,
       recentDailyDates,
       fileHealth,
-      buddy: state.buddy || null,
-      buddyName: state.buddy?.buddyName || '',
     });
   } catch (e) {
     console.error('[workspace/summary] GET failed:', e);

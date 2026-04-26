@@ -12,8 +12,11 @@
 > - **Task Scheduler MCP**（`codepilot_schedule_task` / `codepilot_list_tasks` / `codepilot_cancel_task`） — 删除，`tasks` / `scheduled_tasks` 表 DROP。
 > - **Auto Memory Extraction**（`memory-extractor.ts`） — 删除。
 >
-> 保留：助理工作区目录（`soul.md` / `user.md` / `claude.md` / `memory.md` / `heartbeat.md`）、buddy 系统、`codepilot-notify` 通用通知 MCP、文件树展示。
+> 保留：助理工作区目录（`soul.md` / `user.md` / `claude.md` / `memory.md`）、`codepilot-notify` 通用通知 MCP、文件树展示。
 > 现在的产品定位精简为："Claude Code 的桌面 GUI 客户端 + 助理工作区文件结构"，所有 LLM 行为完全交给 Claude Code 自身（包括读写记忆文件、判断何时更新 soul/user/claude）。
+>
+> **2026-04-26 二次精简**：本文档下方所有关于 Buddy 宠物伙伴 / 心跳系统 / HEARTBEAT.md / HEARTBEAT_OK 协议 / 物种/稀有度/进化 / 3D 形象 / `is_heartbeat_ack` / `shouldRunHeartbeat` / 双模式心跳 / hatch-buddy / evolve-buddy 的章节、API、UI、迁移逻辑全部移除。state schemaVersion 推进至 v6 并剔除 `lastHeartbeatDate` / `lastCheckInDate` / `heartbeatEnabled` / `dailyCheckInEnabled` / `buddy` 字段。仅保留 `useAssistantTrigger` 中用于跨标签页存活检测的 localStorage 心跳（`codepilot:onboarding-heartbeat`）。
+>
 > 下文余下内容反映 v0.44.0 的设计快照，作为历史决策保留。
 
 ---

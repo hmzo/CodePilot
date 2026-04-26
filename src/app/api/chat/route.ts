@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     setSessionRuntimeStatus(session_id, 'running');
 
     // Telegram notification: session started (fire-and-forget)
-    // Skip for auto-trigger turns (onboarding/heartbeat) — these are invisible system triggers
+    // Skip for auto-trigger turns (onboarding) — these are invisible system triggers
     const telegramNotifyOpts = {
       sessionId: session_id,
       sessionTitle: session.title !== 'New Chat' ? session.title : content.slice(0, 50),
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     // Load conversation history from DB as fallback context.
     // Fetch up to 200 messages (DB query is cheap); actual truncation is done
     // by buildFallbackContext using a token budget, not a fixed message count.
-    const { messages: recentMsgs } = getMessages(session_id, { limit: 200, excludeHeartbeatAck: true });
+    const { messages: recentMsgs } = getMessages(session_id, { limit: 200 });
     // Exclude the user message we just saved (last in the list) — it's already the prompt
     const historyMsgs = recentMsgs.slice(0, -1).map(m => ({
       role: m.role as 'user' | 'assistant',
@@ -246,12 +246,11 @@ export async function POST(request: NextRequest) {
     }, 60_000);
 
     // Save assistant message in background, with cleanup callback to release lock
-    const isHeartbeatTurn = !!autoTrigger && content.includes('心跳检查');
     collectStreamResponse(streamForCollect, session_id, telegramNotifyOpts, () => {
       clearInterval(lockRenewalInterval);
       releaseSessionLock(session_id, lockId);
       setSessionRuntimeStatus(session_id, 'idle');
-    }, { isHeartbeatTurn, suppressNotifications: !!autoTrigger });
+    }, { suppressNotifications: !!autoTrigger });
 
     return new Response(streamForClient, {
       headers: {
@@ -282,7 +281,7 @@ async function collectStreamResponse(
   sessionId: string,
   telegramOpts: { sessionId?: string; sessionTitle?: string; workingDirectory?: string },
   onComplete?: () => void,
-  opts?: { isHeartbeatTurn?: boolean; suppressNotifications?: boolean },
+  opts?: { suppressNotifications?: boolean },
 ) {
   const reader = stream.getReader();
   const contentBlocks: MessageContentBlock[] = [];
@@ -293,7 +292,6 @@ async function collectStreamResponse(
   let tokenUsage: TokenUsage | null = null;
   let hasError = false;
   let errorMessage = '';
-  let lastSavedAssistantMsgId: string | null = null;
   // Dedup layer: skip duplicate tool_result events by tool_use_id
   const seenToolResultIds = new Set<string>();
 
@@ -445,35 +443,27 @@ async function collectStreamResponse(
     }
 
     if (contentBlocks.length > 0) {
-      // If the message is text-only (no tool calls), store as plain text
-      // for backward compatibility with existing message rendering.
-      // Strip soft-heartbeat marker from text blocks before persisting (both paths)
-      const heartbeatMarkerRe = /\s*<!--\s*heartbeat-done\s*-->\s*/g;
-      const cleanedBlocks = contentBlocks.map(b =>
-        b.type === 'text' && 'text' in b ? { ...b, text: (b.text as string).replace(heartbeatMarkerRe, '') } : b
-      );
-
       // If it contains tool calls or thinking blocks, store as structured JSON.
-      const hasStructuredBlocks = cleanedBlocks.some(
+      // Otherwise store as plain text for backward compatibility.
+      const hasStructuredBlocks = contentBlocks.some(
         (b) => b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'thinking'
       );
 
       const content = hasStructuredBlocks
-        ? JSON.stringify(cleanedBlocks)
-        : cleanedBlocks
+        ? JSON.stringify(contentBlocks)
+        : contentBlocks
             .filter((b): b is Extract<MessageContentBlock, { type: 'text' }> => b.type === 'text')
             .map((b) => b.text)
             .join('')
             .trim();
 
       if (content) {
-        const savedMsg = addMessage(
+        addMessage(
           sessionId,
           'assistant',
           content,
           tokenUsage ? JSON.stringify(tokenUsage) : null,
         );
-        lastSavedAssistantMsgId = savedMsg.id;
       }
     }
   } catch (e) {
@@ -487,16 +477,12 @@ async function collectStreamResponse(
       contentBlocks.unshift({ type: 'thinking', thinking: thinkingText.trim() });
     }
     if (contentBlocks.length > 0) {
-      const hbRe = /\s*<!--\s*heartbeat-done\s*-->\s*/g;
-      const errCleanedBlocks = contentBlocks.map(b =>
-        b.type === 'text' && 'text' in b ? { ...b, text: (b.text as string).replace(hbRe, '') } : b
-      );
-      const hasStructuredBlocks = errCleanedBlocks.some(
+      const hasStructuredBlocks = contentBlocks.some(
         (b) => b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'thinking'
       );
       const content = hasStructuredBlocks
-        ? JSON.stringify(errCleanedBlocks)
-        : errCleanedBlocks
+        ? JSON.stringify(contentBlocks)
+        : contentBlocks
             .filter((b): b is Extract<MessageContentBlock, { type: 'text' }> => b.type === 'text')
             .map((b) => b.text)
             .join('')
@@ -506,80 +492,8 @@ async function collectStreamResponse(
       }
     }
   } finally {
-    // ── Heartbeat / memory state updates ──
-    try {
-      const fullText = contentBlocks
-        .filter((b): b is Extract<MessageContentBlock, { type: 'text' }> => b.type === 'text')
-        .map((b) => b.text)
-        .join('');
-
-      // 2a. Soft heartbeat: for normal turns in assistant projects, mark heartbeat done
-      // only if the AI's response actually mentions heartbeat-related content.
-      if (!opts?.isHeartbeatTurn && !hasError && fullText.trim().length > 0) {
-        try {
-          const workspacePath = getSetting('assistant_workspace_path');
-          const session = getSession(sessionId);
-          if (workspacePath && session && session.working_directory === workspacePath) {
-            const { loadState, saveState, shouldRunHeartbeat } = await import('@/lib/assistant-workspace');
-            const { getLocalDateString } = await import('@/lib/utils');
-            const st = loadState(workspacePath);
-            if (shouldRunHeartbeat(st)) {
-              // Only mark done if the AI included the heartbeat-done marker.
-              // The soft hint instructs the AI to append <!-- heartbeat-done --> when it checks in.
-              const didCheck = fullText.includes('<!-- heartbeat-done -->');
-              if (didCheck) {
-                st.lastHeartbeatDate = getLocalDateString();
-                saveState(workspacePath, st);
-              }
-            }
-          }
-        } catch { /* best effort */ }
-      }
-
-      // 2b. Heartbeat state update — ONLY for actual heartbeat turns, and ONLY on success
-      if (opts?.isHeartbeatTurn && !hasError && fullText.trim().length > 0) {
-        try {
-          const workspacePath = getSetting('assistant_workspace_path');
-          const session = getSession(sessionId);
-          if (workspacePath && session && session.working_directory === workspacePath) {
-            const { stripHeartbeatToken } = await import('@/lib/heartbeat');
-            const { loadState, saveState } = await import('@/lib/assistant-workspace');
-            const { getLocalDateString } = await import('@/lib/utils');
-            const stripped = stripHeartbeatToken(fullText);
-
-            const st = loadState(workspacePath);
-            st.lastHeartbeatDate = getLocalDateString();
-
-            if (stripped.shouldSkip && lastSavedAssistantMsgId) {
-              // Pure HEARTBEAT_OK — mark ONLY the assistant reply as ack
-              // (auto-trigger messages are not persisted, so we only have the reply)
-              try {
-                const { updateMessageHeartbeatAck } = await import('@/lib/db');
-                updateMessageHeartbeatAck(lastSavedAssistantMsgId, true);
-              } catch { /* best effort */ }
-            } else if (!stripped.shouldSkip) {
-              // Has real content — record for dedup
-              st.lastHeartbeatText = stripped.text;
-              st.lastHeartbeatSentAt = Date.now();
-            }
-
-            // Clear hookTriggeredSessionId
-            if (st.hookTriggeredSessionId === sessionId || !st.hookTriggeredSessionId) {
-              st.hookTriggeredSessionId = undefined;
-              st.hookTriggeredAt = undefined;
-            }
-            saveState(workspacePath, st);
-          }
-        } catch {
-          // best effort heartbeat state update
-        }
-      }
-    } catch (e) {
-      console.error('[chat API] Heartbeat state update failed:', e);
-    }
-
     // Telegram notifications: completion or error (fire-and-forget)
-    // Suppressed for auto-trigger turns (onboarding/heartbeat) — invisible system flows
+    // Suppressed for auto-trigger turns (onboarding) — invisible system flows
     if (!opts?.suppressNotifications) {
       if (hasError) {
         notifySessionError(errorMessage, telegramOpts).catch(() => {});

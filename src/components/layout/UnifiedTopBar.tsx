@@ -21,7 +21,6 @@ import { usePanel } from "@/hooks/usePanel";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useClientPlatform } from '@/hooks/useClientPlatform';
 import { showToast } from '@/hooks/useToast';
-import { SPECIES_IMAGE_URL, EGG_IMAGE_URL, type Species } from '@/lib/buddy';
 
 export function UnifiedTopBar() {
   const {
@@ -43,19 +42,6 @@ export function UnifiedTopBar() {
   } = usePanel();
   const { t } = useTranslation();
   const { isWindows } = useClientPlatform();
-  const [assistantName, setAssistantName] = useState('');
-  const [buddyEmoji, setBuddyEmoji] = useState('');
-  const [buddySpecies, setBuddySpecies] = useState('');
-
-  useEffect(() => {
-    if (!isAssistantWorkspace) return;
-    let cancelled = false;
-    fetch('/api/workspace/summary')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (!cancelled) { setAssistantName(data?.name || ''); setBuddyEmoji(data?.buddy?.emoji || ''); setBuddySpecies(data?.buddy?.species || ''); } })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [isAssistantWorkspace]);
   const pathname = usePathname();
 
   // Only show Git/terminal/panel controls on chat detail routes (/chat/[id]),
@@ -255,12 +241,7 @@ export function UnifiedTopBar() {
                     className={dashboardPanelOpen ? "" : "text-muted-foreground hover:text-foreground"}
                     onClick={() => setDashboardPanelOpen(!dashboardPanelOpen)}
                   >
-                    {isAssistantWorkspace
-                      ? <img
-                          src={buddySpecies ? (SPECIES_IMAGE_URL[buddySpecies as Species] || '') : EGG_IMAGE_URL}
-                          alt="" width={16} height={16} className="rounded-sm"
-                        />
-                      : <ChartBar size={16} />}
+                    <ChartBar size={16} />
                     <span className="sr-only">{t('topBar.dashboard')}</span>
                   </Button>
                 </TooltipTrigger>

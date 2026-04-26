@@ -122,7 +122,6 @@ export interface Message {
   content: string; // JSON string of MessageContentBlock[] for structured content
   created_at: string;
   token_usage: string | null; // JSON string of TokenUsage
-  is_heartbeat_ack?: number; // 1 = heartbeat ack (prunable from transcript), 0 = normal
 }
 
 // Media content block (MCP-compatible: image/audio/video in tool results)
@@ -479,26 +478,11 @@ export interface SetupState {
 
 export interface AssistantWorkspaceState {
   onboardingComplete: boolean;
-  /** @deprecated Use lastHeartbeatDate instead */
-  lastCheckInDate?: string | null;
-  lastHeartbeatDate: string | null;
-  lastHeartbeatText?: string;
-  lastHeartbeatSentAt?: number;
-  /** @deprecated Use heartbeatEnabled instead */
-  dailyCheckInEnabled?: boolean;
-  heartbeatEnabled: boolean;
   schemaVersion: number;
+  /** Cross-tab onboarding lock: which session currently owns the auto-trigger flow. */
   hookTriggeredSessionId?: string;
+  /** ISO timestamp of when the lock was claimed (for stale-lock detection). */
   hookTriggeredAt?: string;
-  buddy?: {
-    species: string;
-    rarity: string;
-    stats: Record<string, number>;
-    emoji: string;
-    peakStat: string;
-    hatchedAt: string;
-    buddyName?: string;
-  };
 }
 
 export interface AssistantWorkspaceFiles {
@@ -510,7 +494,6 @@ export interface AssistantWorkspaceFiles {
 
 export interface AssistantWorkspaceFilesV2 extends AssistantWorkspaceFiles {
   rootDir?: string;
-  heartbeatMd?: string;
 }
 
 // ==========================================
@@ -526,9 +509,6 @@ export interface WorkspaceInspectResult {
   workspaceStatus: 'empty' | 'normal_directory' | 'existing_workspace' | 'partial_workspace' | 'invalid';
   summary?: {
     onboardingComplete: boolean;
-    lastHeartbeatDate: string | null;
-    /** @deprecated Use lastHeartbeatDate instead */
-    lastCheckInDate?: string | null;
     fileCount: number;
   };
 }

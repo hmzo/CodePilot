@@ -6,13 +6,7 @@ export interface FileStatus {
 
 export interface WorkspaceState {
   onboardingComplete: boolean;
-  lastHeartbeatDate: string | null;
-  /** @deprecated Use lastHeartbeatDate instead */
-  lastCheckInDate?: string | null;
   schemaVersion: number;
-  heartbeatEnabled: boolean;
-  /** @deprecated Use heartbeatEnabled instead */
-  dailyCheckInEnabled?: boolean;
 }
 
 export interface TaxonomyCategoryInfo {

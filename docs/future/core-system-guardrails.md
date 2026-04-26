@@ -146,7 +146,7 @@ System Prompt 组成（按注入顺序，静态内容在前以优化 prompt cach
 
 [VOLATILE SUFFIX — 每 turn 可变]
   4. Memory Hint                  ← 每天变（最近日记日期列表）
-  5. Assistant Instructions       ← 状态依赖（onboarding/heartbeat/buddy personality）
+  5. Assistant Instructions       ← 状态依赖（onboarding 状态）
   6. Dashboard Context            ← 仅 Desktop，widget 增删时变
   7. systemPromptAppend           ← 每次请求（image agent mode、skills 等）
 

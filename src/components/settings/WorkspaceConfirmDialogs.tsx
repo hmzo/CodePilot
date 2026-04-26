@@ -132,10 +132,6 @@ export function WorkspaceConfirmDialogs({
                 {confirmDialog?.kind === 'existing_workspace' && (
                   <div className="rounded border border-border/50 p-3 space-y-1 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">{t('assistant.summaryLastHeartbeat')}:</span>
-                      <span>{confirmDialog.summary.lastHeartbeatDate || t('assistant.summaryNever')}</span>
-                    </div>
-                    <div className="flex justify-between">
                       <span className="text-muted-foreground">{t('assistant.summaryFileCount')}:</span>
                       <span>{confirmDialog.summary.fileCount}</span>
                     </div>

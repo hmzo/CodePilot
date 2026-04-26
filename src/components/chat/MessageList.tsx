@@ -2,10 +2,10 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { TranslationKey } from '@/i18n';
 import { useStickToBottomContext } from 'use-stick-to-bottom';
 import { Button } from '@/components/ui/button';
 import type { Message } from '@/types';
+import type { TranslationKey } from '@/i18n';
 import {
   Conversation,
   ConversationContent,
@@ -15,7 +15,6 @@ import {
 import { MessageItem } from './MessageItem';
 import { StreamingMessage } from './StreamingMessage';
 import { CodePilotLogo } from './CodePilotLogo';
-import { SPECIES_IMAGE_URL, EGG_IMAGE_URL, RARITY_BG_GRADIENT, type Species, type Rarity } from '@/lib/buddy';
 
 /**
  * Scrolls to bottom when streaming starts or new messages are appended.
@@ -221,48 +220,10 @@ export function MessageList({
   }, [messages]);
 
   if (messages.length === 0 && !isStreaming) {
-    if (isAssistantProject) {
-      // Assistant workspace — show buddy or egg welcome
-      const buddyInfo = typeof globalThis !== 'undefined'
-        ? (globalThis as Record<string, unknown>).__codepilot_buddy_info__ as { species?: string; rarity?: string } | undefined
-        : undefined;
-      const hasBuddy = !!buddyInfo?.species;
-      return (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="flex flex-col items-center gap-3 text-center">
-            {hasBuddy ? (
-              <div
-                className="w-20 h-20 rounded-2xl flex items-center justify-center"
-                style={{ background: RARITY_BG_GRADIENT[buddyInfo!.rarity as Rarity] || '' }}
-              >
-                <img
-                  src={SPECIES_IMAGE_URL[buddyInfo!.species as Species] || ''}
-                  alt="" width={64} height={64} className="drop-shadow-md"
-                />
-              </div>
-            ) : (
-              <img src={EGG_IMAGE_URL} alt="" width={64} height={64} className="drop-shadow-md" />
-            )}
-            <div className="space-y-1">
-              <h3 className="font-medium text-sm">
-                {hasBuddy
-                  ? (assistantName || t('messageList.claudeChat'))
-                  : t('buddy.adoptPrompt' as TranslationKey)}
-              </h3>
-              <p className="text-muted-foreground text-sm">
-                {hasBuddy
-                  ? t('messageList.emptyDescription')
-                  : t('buddy.adoptDescription' as TranslationKey)}
-              </p>
-            </div>
-          </div>
-        </div>
-      );
-    }
     return (
       <div className="flex flex-1 items-center justify-center">
         <ConversationEmptyState
-          title={t('messageList.claudeChat')}
+          title={isAssistantProject ? (assistantName || t('messageList.claudeChat')) : t('messageList.claudeChat')}
           description={t('messageList.emptyDescription')}
           icon={<CodePilotLogo className="h-16 w-16" />}
         />

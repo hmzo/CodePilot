@@ -1,14 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import type { AssistantWorkspaceState, AssistantWorkspaceFiles, AssistantWorkspaceFilesV2, SearchResult } from '@/types';
-import { getLocalDateString } from '@/lib/utils';
-import { HEARTBEAT_TEMPLATE, isWithinActiveHours } from './heartbeat';
 
 const DEFAULT_STATE: AssistantWorkspaceState = {
   onboardingComplete: false,
-  lastHeartbeatDate: null,
-  heartbeatEnabled: false,
-  schemaVersion: 5,
+  schemaVersion: 6,
 };
 
 const STATE_DIR = '.assistant';
@@ -117,74 +113,16 @@ export function migrateStateV1ToV2(dir: string): void {
 }
 
 /**
- * Migrate schema v2 → v3: normalize lastCheckInDate from UTC to local.
+ * v5→v6 migration: drop legacy buddy + heartbeat fields.
+ * The buddy companion / heartbeat / daily check-in feature was removed,
+ * so we strip the obsolete keys (lastCheckInDate, lastHeartbeatDate,
+ * lastHeartbeatText, lastHeartbeatSentAt, dailyCheckInEnabled,
+ * heartbeatEnabled, buddy) from any persisted state.json.
  *
- * Before v3, lastCheckInDate was written as `new Date().toISOString().slice(0, 10)`
- * which is a UTC date. After v3 it's written via `getLocalDateString()`.
- *
- * For users east/west of UTC, the old UTC date can differ from the local date
- * by ±1 day. We only rewrite the stored date if it matches today's UTC date —
- * meaning the user checked in "today" under the old semantics and the value
- * just needs normalizing to local. Clearly-past dates are left as-is so the
- * user correctly receives their next check-in.
- *
- * Edge cases that the migration cannot resolve (e.g. check-in written during
- * the UTC/local day-boundary mismatch window, but migration runs after UTC
- * midnight) are handled by a runtime compat fallback in needsDailyCheckIn.
+ * NOTE: hookTriggeredSessionId / hookTriggeredAt are retained — they still
+ * serve the cross-tab onboarding lock for the auto-trigger flow.
  */
-export function migrateStateV2ToV3(dir: string): void {
-  let state: AssistantWorkspaceState;
-  try {
-    const statePath = path.join(dir, STATE_DIR, STATE_FILE);
-    const raw = fs.readFileSync(statePath, 'utf-8');
-    state = JSON.parse(raw) as AssistantWorkspaceState;
-  } catch {
-    return;
-  }
-
-  if (state.schemaVersion >= 3) return;
-
-  if (state.lastCheckInDate) {
-    const utcToday = new Date().toISOString().slice(0, 10);
-    // Only normalize if the stored UTC date is "today" — the ambiguous case
-    // where the user checked in today but the UTC/local date may differ.
-    // Past dates are left untouched so needsDailyCheckIn triggers correctly.
-    if (state.lastCheckInDate === utcToday) {
-      state.lastCheckInDate = getLocalDateString();
-    }
-  }
-
-  state.schemaVersion = 3;
-  saveState(dir, state);
-}
-
-/**
- * v3→v4 migration: reset dailyCheckInEnabled to false for all users.
- * Previously the default was implicitly "enabled" (undefined treated as true).
- * Now the default is explicitly false — users must opt-in.
- */
-export function migrateStateV3ToV4(dir: string): void {
-  let state: AssistantWorkspaceState;
-  try {
-    const statePath = path.join(dir, STATE_DIR, STATE_FILE);
-    const raw = fs.readFileSync(statePath, 'utf-8');
-    state = JSON.parse(raw) as AssistantWorkspaceState;
-  } catch {
-    return;
-  }
-
-  if (state.schemaVersion >= 4) return;
-
-  state.dailyCheckInEnabled = false;
-  state.schemaVersion = 4;
-  saveState(dir, state);
-}
-
-/**
- * v4→v5 migration: rename check-in fields to heartbeat fields.
- * lastCheckInDate → lastHeartbeatDate, dailyCheckInEnabled → heartbeatEnabled.
- */
-function migrateStateV4ToV5(dir: string): void {
+function migrateStateV5ToV6(dir: string): void {
   let state: AssistantWorkspaceState;
   try {
     const statePath = path.join(dir, STATE_DIR, STATE_FILE);
@@ -194,28 +132,23 @@ function migrateStateV4ToV5(dir: string): void {
     return;
   }
 
-  if (state.schemaVersion >= 5) return;
+  if (state.schemaVersion >= 6) return;
 
-  // Work with raw parsed object to safely rename fields across schema versions
   const raw = state as unknown as Record<string, unknown>;
-
-  // Rename lastCheckInDate → lastHeartbeatDate
-  if ('lastCheckInDate' in raw && !('lastHeartbeatDate' in raw)) {
-    raw.lastHeartbeatDate = raw.lastCheckInDate ?? null;
-  }
-  if (!('lastHeartbeatDate' in raw)) {
-    raw.lastHeartbeatDate = null;
-  }
-
-  // Rename dailyCheckInEnabled → heartbeatEnabled
-  if ('dailyCheckInEnabled' in raw && !('heartbeatEnabled' in raw)) {
-    raw.heartbeatEnabled = raw.dailyCheckInEnabled ?? false;
-  }
-  if (!('heartbeatEnabled' in raw)) {
-    raw.heartbeatEnabled = false;
+  const obsoleteKeys = [
+    'lastCheckInDate',
+    'lastHeartbeatDate',
+    'lastHeartbeatText',
+    'lastHeartbeatSentAt',
+    'dailyCheckInEnabled',
+    'heartbeatEnabled',
+    'buddy',
+  ];
+  for (const key of obsoleteKeys) {
+    delete raw[key];
   }
 
-  state.schemaVersion = 5;
+  state.schemaVersion = 6;
   saveState(dir, state);
 }
 
@@ -367,13 +300,6 @@ export function initializeWorkspace(dir: string): string[] {
     fs.mkdirSync(inboxDir, { recursive: true });
   }
 
-  // Create HEARTBEAT.md if not exists (V3)
-  const heartbeatPath = path.join(dir, 'HEARTBEAT.md');
-  if (!fs.existsSync(heartbeatPath)) {
-    fs.writeFileSync(heartbeatPath, HEARTBEAT_TEMPLATE, 'utf-8');
-    created.push(heartbeatPath);
-  }
-
   // State file
   const statePath = path.join(stateDir, STATE_FILE);
   if (!fs.existsSync(statePath)) {
@@ -381,9 +307,7 @@ export function initializeWorkspace(dir: string): string[] {
   } else {
     // Migrate existing state through all schema versions
     migrateStateV1ToV2(dir);
-    migrateStateV2ToV3(dir);
-    migrateStateV3ToV4(dir);
-    migrateStateV4ToV5(dir);
+    migrateStateV5ToV6(dir);
   }
 
   // For existing directories, generate root docs and infer taxonomy
@@ -433,12 +357,6 @@ export function loadWorkspaceFiles(dir: string): AssistantWorkspaceFilesV2 {
 
   // Daily memories and root docs are now accessed via MCP tools
   // (codepilot_memory_search / codepilot_memory_get), not loaded into system prompt.
-
-  // Load HEARTBEAT.md
-  const heartbeatPath = path.join(dir, 'HEARTBEAT.md');
-  if (fs.existsSync(heartbeatPath)) {
-    result.heartbeatMd = fs.readFileSync(heartbeatPath, 'utf-8');
-  }
 
   result.rootDir = dir;
 
@@ -523,16 +441,8 @@ export function loadState(dir: string): AssistantWorkspaceState {
       migrateStateV1ToV2(dir);
       migrated = true;
     }
-    if (state.schemaVersion < 3) {
-      migrateStateV2ToV3(dir);
-      migrated = true;
-    }
-    if (state.schemaVersion < 4) {
-      migrateStateV3ToV4(dir);
-      migrated = true;
-    }
-    if (state.schemaVersion < 5) {
-      migrateStateV4ToV5(dir);
+    if (state.schemaVersion < 6) {
+      migrateStateV5ToV6(dir);
       migrated = true;
     }
     if (migrated) {
@@ -554,35 +464,6 @@ export function saveState(dir: string, state: AssistantWorkspaceState): void {
   const tmpPath = statePath + '.tmp';
   fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2), 'utf-8');
   fs.renameSync(tmpPath, statePath);
-}
-
-/** @deprecated Use shouldRunHeartbeat instead */
-export function needsDailyCheckIn(state: AssistantWorkspaceState, now?: Date): boolean {
-  return shouldRunHeartbeat(state, undefined, now);
-}
-
-export function shouldRunHeartbeat(
-  state: AssistantWorkspaceState,
-  heartbeatConfig?: { activeHours?: { start?: string; end?: string } },
-  now?: Date,
-): boolean {
-  if (!state.onboardingComplete) return false;
-  if (state.heartbeatEnabled !== true) return false;
-
-  const d = now ?? new Date();
-  const localToday = getLocalDateString(d);
-  const lastDate = state.lastHeartbeatDate ?? state.lastCheckInDate;
-  if (lastDate === localToday) return false;
-
-  // Compat: before schema v3, dates were stored as UTC
-  const utcToday = d.toISOString().slice(0, 10);
-  if (lastDate === utcToday) return false;
-
-  if (heartbeatConfig?.activeHours) {
-    if (!isWithinActiveHours(heartbeatConfig.activeHours)) return false;
-  }
-
-  return true;
 }
 
 // ==========================================

@@ -371,10 +371,6 @@ function migrateDb(db: Database.Database): void {
     safeAddColumn(db, "ALTER TABLE messages ADD COLUMN token_usage TEXT");
   }
 
-  if (!msgColNames.includes('is_heartbeat_ack')) {
-    safeAddColumn(db, "ALTER TABLE messages ADD COLUMN is_heartbeat_ack INTEGER NOT NULL DEFAULT 0");
-  }
-
   // Provider system + auxiliary AI scheduler removed: drop legacy tables and
   // obsolete settings keys. Old chat_sessions.provider_id / provider_name
   // columns are intentionally kept as dead columns to avoid SQLite
@@ -862,23 +858,22 @@ export function updateSessionPermissionProfile(id: string, profile: string): voi
 
 export function getMessages(
   sessionId: string,
-  options?: { limit?: number; beforeRowId?: number; excludeHeartbeatAck?: boolean },
+  options?: { limit?: number; beforeRowId?: number },
 ): { messages: Message[]; hasMore: boolean } {
   const db = getDb();
   const limit = options?.limit ?? 100;
   const beforeRowId = options?.beforeRowId;
-  const ackFilter = options?.excludeHeartbeatAck ? ' AND is_heartbeat_ack = 0' : '';
 
   let rows: Message[];
   if (beforeRowId) {
     // Fetch `limit + 1` rows before the cursor to detect if there are more
     rows = db.prepare(
-      `SELECT *, rowid as _rowid FROM messages WHERE session_id = ? AND rowid < ?${ackFilter} ORDER BY rowid DESC LIMIT ?`
+      `SELECT *, rowid as _rowid FROM messages WHERE session_id = ? AND rowid < ? ORDER BY rowid DESC LIMIT ?`
     ).all(sessionId, beforeRowId, limit + 1) as Message[];
   } else {
     // Fetch the most recent `limit + 1` messages
     rows = db.prepare(
-      `SELECT *, rowid as _rowid FROM messages WHERE session_id = ?${ackFilter} ORDER BY rowid DESC LIMIT ?`
+      `SELECT *, rowid as _rowid FROM messages WHERE session_id = ? ORDER BY rowid DESC LIMIT ?`
     ).all(sessionId, limit + 1) as Message[];
   }
 
@@ -915,11 +910,6 @@ export function updateMessageContent(messageId: string, content: string): number
   const db = getDb();
   const result = db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(content, messageId);
   return result.changes;
-}
-
-export function updateMessageHeartbeatAck(messageId: string, isAck: boolean): void {
-  const db = getDb();
-  db.prepare('UPDATE messages SET is_heartbeat_ack = ? WHERE id = ?').run(isAck ? 1 : 0, messageId);
 }
 
 /**

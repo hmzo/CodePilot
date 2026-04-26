@@ -11,8 +11,11 @@
 > - `POST /api/workspace/{onboarding,checkin,quick-actions}` 路由
 > - `OnboardingCard` / `CheckInCard` / `QuickActions` 组件
 >
-> 保留：助理工作区目录结构（`soul.md` / `user.md` / `claude.md` / `memory.md` / `heartbeat.md`）、文件树展示、Telegram 静默规则。
+> 保留：助理工作区目录结构（`soul.md` / `user.md` / `claude.md` / `memory.md`）、文件树展示、Telegram 静默规则。
 > 当前 CodePilot 把"读记忆 / 写记忆"完全交给 Claude Code 自带的 `Read`/`Edit`/`Grep` 工具，模型直接对 `~/.codepilot/workspace/memory.md` 等文件操作。
+>
+> **2026-04-26 二次精简**：本文档下方 "Heartbeat 系统" 章节描述的 V3 心跳协议（HEARTBEAT.md / HEARTBEAT_OK / `shouldRunHeartbeat` / `lastHeartbeatDate` / `is_heartbeat_ack` / 心跳定时触发 / `每日心跳问询` / 渐进式更新等）随 buddy 游戏化下线整体移除，相关代码、API、UI、i18n 全部删除，state schemaVersion 推进至 v6 并剔除 `lastHeartbeatDate` / `lastCheckInDate` / `heartbeatEnabled` / `dailyCheckInEnabled` / `buddy` 字段。仅保留 `useAssistantTrigger` 中用于跨标签页存活检测的 localStorage 心跳（`codepilot:onboarding-heartbeat`）。
+>
 > 下文余下内容反映 V3 + V3.1 实施时点的设计快照，作为历史决策保留。
 
 ## 概述

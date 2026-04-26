@@ -16,14 +16,6 @@ interface WorkspaceSummary {
   configured: boolean;
   name?: string;
   styleHint?: string;
-  buddy?: {
-    species: string;
-    rarity: string;
-    stats: Record<string, number>;
-    emoji: string;
-    peakStat: string;
-    hatchedAt: string;
-  };
 }
 
 export function AssistantWorkspaceSection() {
@@ -252,7 +244,7 @@ export function AssistantWorkspaceSection() {
         case 'existing_workspace':
           setConfirmDialog({
             kind: 'existing_workspace',
-            summary: data.summary || { onboardingComplete: false, lastHeartbeatDate: null, fileCount: 0 },
+            summary: data.summary || { onboardingComplete: false, fileCount: 0 },
           });
           break;
         case 'partial_workspace':
@@ -422,41 +414,18 @@ export function AssistantWorkspaceSection() {
         </div>
       )}
 
-      {/* Personality / Buddy Preview */}
+      {/* Personality Preview */}
       {workspace?.path && workspace.valid !== false && summary?.configured && (
         <div className="rounded-lg border border-border/50 p-4">
           <h2 className="text-sm font-medium mb-3">{t('assistant.personality')}</h2>
           <div className="flex items-center gap-3">
-            <span className="text-3xl">{summary?.buddy?.emoji || '🥚'}</span>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium truncate">{assistantName}</p>
-                {summary?.buddy && (
-                  <span className="text-[10px] text-muted-foreground">
-                    {summary.buddy.rarity === 'common' ? '★' : summary.buddy.rarity === 'uncommon' ? '★★' : summary.buddy.rarity === 'rare' ? '★★★' : summary.buddy.rarity === 'epic' ? '★★★★' : '★★★★★'}
-                  </span>
-                )}
-              </div>
+              <p className="text-sm font-medium truncate">{assistantName}</p>
               {summary.styleHint && (
                 <p className="text-xs text-muted-foreground mt-0.5 truncate">{summary.styleHint}</p>
               )}
             </div>
           </div>
-          {!summary?.buddy && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full mt-3 gap-2"
-              onClick={async () => {
-                try {
-                  await fetch('/api/workspace/hatch-buddy', { method: 'POST' });
-                  fetchSummary();
-                } catch { /* ignore */ }
-              }}
-            >
-              🥚 {t('buddy.hatch')}
-            </Button>
-          )}
           <p className="text-[11px] text-muted-foreground mt-2">
             {t('assistant.editSoulHint')}
           </p>

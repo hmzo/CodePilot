@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePanel } from '@/hooks/usePanel';
 import { Button } from '@/components/ui/button';
 import { AssistantAvatar } from '@/components/ui/AssistantAvatar';
-import { X, Gear, Brain, Heart, Clock, File, Check, Warning } from '@/components/ui/icon';
+import { X, Gear, Brain, Clock, Check, Warning } from '@/components/ui/icon';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useRouter } from 'next/navigation';
 import type { TranslationKey } from '@/i18n';
@@ -14,8 +14,6 @@ interface AssistantSummary {
   name: string;
   styleHint?: string;
   onboardingComplete: boolean;
-  lastHeartbeatDate: string | null;
-  heartbeatEnabled: boolean;
   memoryCount: number;
   recentDailyDates?: string[];
   fileHealth?: Record<string, boolean>;
@@ -86,14 +84,6 @@ export function AssistantPanel() {
               </h3>
               <div className="space-y-1.5">
                 <StatusRow
-                  icon={<Heart size={13} />}
-                  label={t('assistant.panel.heartbeat' as TranslationKey)}
-                  value={summary.heartbeatEnabled
-                    ? summary.lastHeartbeatDate || t('assistant.panel.enabled' as TranslationKey)
-                    : t('assistant.panel.disabled' as TranslationKey)}
-                  status={summary.heartbeatEnabled ? 'ok' : 'off'}
-                />
-                <StatusRow
                   icon={<Brain size={13} />}
                   label={t('assistant.panel.memories' as TranslationKey)}
                   value={`${summary.memoryCount}`}
@@ -156,15 +146,6 @@ export function AssistantPanel() {
                 >
                   <Gear size={13} />
                   {t('assistant.panel.assistantSettings' as TranslationKey)}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2 text-xs h-7"
-                  onClick={() => router.push('/settings#assistant')}
-                >
-                  <Clock size={13} />
-                  {t('assistant.panel.editHeartbeat' as TranslationKey)}
                 </Button>
               </div>
             </section>

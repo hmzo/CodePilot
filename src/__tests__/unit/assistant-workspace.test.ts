@@ -6,9 +6,8 @@
  * Tests verify:
  * 1. Auto-trigger: onboarding detects correctly for new workspace
  * 2. Input focus fallback: hookTriggeredSessionId prevents repeat
- * 3. Daily check-in: needsDailyCheckIn respects onboarding state (uses heartbeat fields)
- * 4. Workspace prompt scoping: only assistant project sessions get prompts
- * 5. V2: Daily memory write/load, v1→v2 migration, budget-aware prompt assembly
+ * 3. Workspace prompt scoping: only assistant project sessions get prompts
+ * 4. V2: Daily memory write/load, v1→v2 migration, budget-aware prompt assembly
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -16,7 +15,6 @@ import assert from 'node:assert/strict';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import { getLocalDateString } from '@/lib/utils';
 
 // Set a temp data dir before importing db module
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codepilot-workspace-test-'));
@@ -27,7 +25,6 @@ const {
   initializeWorkspace,
   loadState,
   saveState,
-  needsDailyCheckIn,
   loadWorkspaceFiles,
   assembleWorkspacePrompt,
   generateDirectoryDocs,
@@ -59,8 +56,7 @@ describe('Assistant Workspace', () => {
 
       const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
       assert.equal(state.onboardingComplete, false);
-      assert.equal(state.lastHeartbeatDate, null);
-      assert.equal(state.schemaVersion, 5);
+      assert.equal(state.schemaVersion, 6);
     });
 
     it('should create all 4 template files', () => {
@@ -83,15 +79,12 @@ describe('Assistant Workspace', () => {
       initializeWorkspace(workDir);
       const state = loadState(workDir);
       assert.equal(state.onboardingComplete, false);
-      // needsDailyCheckIn should return false when onboarding not done
-      assert.equal(needsDailyCheckIn(state), false);
     });
 
     it('should not need onboarding after completion', () => {
       initializeWorkspace(workDir);
       const state = loadState(workDir);
       state.onboardingComplete = true;
-      state.lastHeartbeatDate = getLocalDateString();
       saveState(workDir, state);
 
       const reloaded = loadState(workDir);
@@ -119,35 +112,6 @@ describe('Assistant Workspace', () => {
       const reloaded = loadState(workDir);
       // A different session ID should not match
       assert.notEqual(reloaded.hookTriggeredSessionId, 'session-456');
-    });
-  });
-
-  describe('daily check-in respects onboarding state', () => {
-    it('should not trigger check-in if onboarding not complete', () => {
-      const state = { onboardingComplete: false, lastHeartbeatDate: null, lastCheckInDate: null, heartbeatEnabled: false, schemaVersion: 5 };
-      assert.equal(needsDailyCheckIn(state), false);
-    });
-
-    it('should trigger check-in if onboarding done and no check-in today', () => {
-      const state = { onboardingComplete: true, lastHeartbeatDate: '2020-01-01', lastCheckInDate: '2020-01-01', heartbeatEnabled: true, dailyCheckInEnabled: true, schemaVersion: 5 };
-      assert.equal(needsDailyCheckIn(state), true);
-    });
-
-    it('should not trigger check-in if already done today', () => {
-      const today = getLocalDateString();
-      const state = { onboardingComplete: true, lastHeartbeatDate: today, lastCheckInDate: today, heartbeatEnabled: true, dailyCheckInEnabled: true, schemaVersion: 5 };
-      assert.equal(needsDailyCheckIn(state), false);
-    });
-
-    it('onboarding day should skip daily check-in (lastHeartbeatDate set)', () => {
-      const today = getLocalDateString();
-      const state = { onboardingComplete: true, lastHeartbeatDate: today, lastCheckInDate: today, heartbeatEnabled: true, dailyCheckInEnabled: true, schemaVersion: 5 };
-      assert.equal(needsDailyCheckIn(state), false);
-    });
-
-    it('should not trigger check-in if heartbeatEnabled is not set (default off)', () => {
-      const state = { onboardingComplete: true, lastHeartbeatDate: '2020-01-01', lastCheckInDate: '2020-01-01', heartbeatEnabled: false, schemaVersion: 5 };
-      assert.equal(needsDailyCheckIn(state), false);
     });
   });
 
@@ -268,20 +232,20 @@ describe('Assistant Workspace', () => {
       migrateStateV1ToV2(workDir);
 
       const state = loadState(workDir);
-      assert.equal(state.schemaVersion, 5);
+      assert.equal(state.schemaVersion, 6);
       assert.ok(fs.existsSync(path.join(workDir, 'memory', 'daily')));
       assert.ok(fs.existsSync(path.join(workDir, 'Inbox')));
     });
 
-    it('should not re-migrate v5 state', () => {
+    it('should not re-migrate latest state', () => {
       initializeWorkspace(workDir);
       const state = loadState(workDir);
-      assert.equal(state.schemaVersion, 5);
+      assert.equal(state.schemaVersion, 6);
 
       // Should not throw or change anything
       migrateStateV1ToV2(workDir);
       const reloaded = loadState(workDir);
-      assert.equal(reloaded.schemaVersion, 5);
+      assert.equal(reloaded.schemaVersion, 6);
     });
   });
 
@@ -574,7 +538,6 @@ describe('saveState is atomic (write-then-rename)', () => {
     initializeWorkspace(workDir2);
     const state = loadState(workDir2);
     state.onboardingComplete = true;
-    state.lastHeartbeatDate = getLocalDateString();
     saveState(workDir2, state);
 
     // Read raw file to verify it's valid JSON

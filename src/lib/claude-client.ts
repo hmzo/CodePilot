@@ -1289,7 +1289,7 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
                   type: 'status',
                   data: JSON.stringify({ notification: true, title: errTitle, message: errMsg }),
                 }));
-                // Skip Telegram for auto-trigger turns (onboarding/heartbeat)
+                // Skip Telegram for auto-trigger turns (onboarding)
                 if (!autoTrigger) {
                   notifyGeneric(errTitle, errMsg, telegramOpts).catch(() => {});
                 }

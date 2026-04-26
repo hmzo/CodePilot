@@ -5,7 +5,9 @@
 > - `OnboardingCard` / `CheckInCard` / `QuickActions` 组件删除
 > - `onboarding-processor.ts` / `checkin-processor.ts` / `text-generator.ts` 删除
 >
-> 保留：助理工作区目录结构（`soul.md` / `user.md` / `claude.md` / `memory.md` / `heartbeat.md`）、文件树展示、Telegram 静默规则、buddy 系统集成。
+> 保留：助理工作区目录结构（`soul.md` / `user.md` / `claude.md` / `memory.md`）、文件树展示、Telegram 静默规则。
+>
+> **2026-04-26 二次精简**：buddy 游戏化系统（生成/进化/3D 视觉/伙伴心跳/HEARTBEAT.md / HEARTBEAT_OK 协议 / 每日心跳问询）整体下线，相关文件、API、UI、i18n、迁移逻辑全部移除（state schemaVersion v6 已剔除 `lastHeartbeatDate` / `lastCheckInDate` / `heartbeatEnabled` / `dailyCheckInEnabled` / `buddy` 字段）。仅保留 `useAssistantTrigger` 中用于跨标签页存活检测的 localStorage 心跳（`codepilot:onboarding-heartbeat`）。
 > 现在 CodePilot 把"读记忆 / 写记忆 / 更新人格"完全交给 Claude Code 自带的 `Read`/`Edit`/`Grep` 工具，模型直接对工作区文件操作（不再走 in-process MCP）。
 > 下文余下内容反映此前的设计快照，作为历史决策保留。
 

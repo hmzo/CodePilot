@@ -167,7 +167,7 @@ export async function processMessage(
     const bypassPermissions = session?.permission_profile === 'full_access';
 
     // Load conversation history for context
-    const { messages: recentMsgs } = getMessages(sessionId, { limit: 50, excludeHeartbeatAck: true });
+    const { messages: recentMsgs } = getMessages(sessionId, { limit: 50 });
     const historyMsgs = recentMsgs.slice(0, -1).map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,

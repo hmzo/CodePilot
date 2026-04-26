@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { getLocalDateString } from "@/lib/utils";
 
 interface FileStatus {
   exists: boolean;
@@ -11,10 +10,6 @@ interface FileStatus {
 
 interface WorkspaceState {
   onboardingComplete: boolean;
-  lastHeartbeatDate: string | null;
-  /** @deprecated Use lastHeartbeatDate instead */
-  lastCheckInDate?: string | null;
-  heartbeatEnabled: boolean;
   schemaVersion: number;
 }
 
@@ -78,18 +73,12 @@ export function useAssistantWorkspace() {
     }
   }, [workspace?.path, refetch]);
 
-  const today = getLocalDateString();
-  const needsCheckIn = workspace?.path != null
-    && workspace.state != null
-    && workspace.state.lastHeartbeatDate !== today;
-
   return {
     workspacePath: workspace?.path ?? null,
     fileStatus: workspace?.files ?? {},
     state: workspace?.state ?? null,
     loading,
     error,
-    needsCheckIn,
     setWorkspacePath,
     initializeWorkspace,
     refetch,

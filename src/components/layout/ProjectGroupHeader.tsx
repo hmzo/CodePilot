@@ -23,7 +23,6 @@ import { cn } from "@/lib/utils";
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from "@/i18n";
 import { useState } from "react";
-import { SPECIES_IMAGE_URL, EGG_IMAGE_URL, type Species } from "@/lib/buddy";
 
 interface ProjectGroupHeaderProps {
   workingDirectory: string;
@@ -38,10 +37,6 @@ interface ProjectGroupHeaderProps {
   onRemoveProject?: (workingDirectory: string) => void;
   assistantName?: string;
   assistantMemoryCount?: number;
-  lastHeartbeatDate?: string;
-  buddyEmoji?: string;
-  buddyName?: string;
-  buddySpecies?: string;
 }
 
 export function ProjectGroupHeader({
@@ -57,10 +52,6 @@ export function ProjectGroupHeader({
   onRemoveProject,
   assistantName,
   assistantMemoryCount,
-  lastHeartbeatDate,
-  buddyEmoji,
-  buddyName,
-  buddySpecies,
 }: ProjectGroupHeaderProps) {
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -136,18 +127,11 @@ export function ProjectGroupHeader({
   );
 
   if (isWorkspace) {
-    const statusParts: string[] = [];
-    if (assistantMemoryCount) {
-      statusParts.push(t('assistant.memoryCount' as TranslationKey, { count: String(assistantMemoryCount) }));
-    }
-    if (lastHeartbeatDate) {
-      statusParts.push(t('assistant.lastHeartbeat' as TranslationKey, { date: lastHeartbeatDate }));
-    }
-
     const folderName = displayName;
-    const nameDisplay = buddyEmoji
-      ? (buddyName || assistantName || t('assistant.defaultName' as TranslationKey))
-      : t('buddy.adoptPrompt' as TranslationKey);
+    const nameDisplay = assistantName || t('assistant.defaultName' as TranslationKey);
+    const memoryHint = assistantMemoryCount
+      ? t('assistant.memoryCount' as TranslationKey, { count: String(assistantMemoryCount) })
+      : null;
 
     return (
       <div
@@ -161,15 +145,7 @@ export function ProjectGroupHeader({
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        {buddySpecies ? (
-          <img
-            src={SPECIES_IMAGE_URL[buddySpecies as Species] || ''}
-            alt="" width={24} height={24}
-            className="shrink-0 rounded"
-          />
-        ) : (
-          <img src={EGG_IMAGE_URL} alt="egg" width={24} height={24} className="shrink-0" />
-        )}
+        <FolderOpen size={20} className="shrink-0 text-primary" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1">
             <span className="truncate text-[13px] font-medium text-sidebar-foreground">
@@ -182,7 +158,7 @@ export function ProjectGroupHeader({
             )}
           </div>
           <span className="block truncate text-[11px] text-muted-foreground/50 leading-tight">
-            / {folderName}
+            {memoryHint ? `${memoryHint} · ` : ''}/ {folderName}
           </span>
         </div>
         {actionButtons}

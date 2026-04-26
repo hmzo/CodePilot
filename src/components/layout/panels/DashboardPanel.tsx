@@ -2,17 +2,17 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { X, ArrowClockwise, CaretUp, CaretDown, ChartBar, Trash, DownloadSimple, Heart, Brain, Check, Warning, Gear } from "@/components/ui/icon";
+import { X, ArrowClockwise, CaretUp, CaretDown, ChartBar, Trash, DownloadSimple, Brain, Check, Warning, Gear } from "@/components/ui/icon";
 import { showToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/button";
 import { usePanel } from "@/hooks/usePanel";
 import { useTranslation } from "@/hooks/useTranslation";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { WidgetRenderer } from "@/components/chat/WidgetRenderer";
+import { AssistantAvatar } from "@/components/ui/AssistantAvatar";
 import type { DashboardConfig, DashboardWidget } from "@/types/dashboard";
 import type { TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { RARITY_DISPLAY, STAT_LABEL, SPECIES_LABEL, rarityColor, getBuddyTitle, SPECIES_IMAGE_URL, EGG_IMAGE_URL, RARITY_BG_GRADIENT, type BuddyData, type Species, type Rarity } from "@/lib/buddy";
 
 const DASHBOARD_MIN_WIDTH = 320;
 const DASHBOARD_MAX_WIDTH = 800;
@@ -23,12 +23,9 @@ interface AssistantSummary {
   name: string;
   styleHint?: string;
   onboardingComplete: boolean;
-  lastHeartbeatDate: string | null;
-  heartbeatEnabled: boolean;
   memoryCount: number;
   recentDailyDates?: string[];
   fileHealth?: Record<string, boolean>;
-  buddy?: BuddyData;
 }
 
 export function DashboardPanel() {
@@ -266,23 +263,12 @@ export function DashboardPanel() {
         {/* Header */}
         <div className="flex h-10 shrink-0 items-center justify-between px-3">
           <div className="flex items-center gap-2">
-            {isAssistantWorkspace ? (
-              assistantSummary?.buddy ? (
-                <img
-                  src={SPECIES_IMAGE_URL[assistantSummary.buddy.species as Species] || ''}
-                  alt={assistantSummary.buddy.species}
-                  width={24} height={24}
-                  className="rounded"
-                />
-              ) : (
-                <img src={EGG_IMAGE_URL} alt="egg" width={24} height={24} />
-              )
-            ) : null}
+            {isAssistantWorkspace && assistantSummary?.configured && (
+              <AssistantAvatar name={assistantSummary.name || 'assistant'} size={20} />
+            )}
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {isAssistantWorkspace
-                ? (assistantSummary?.buddy
-                    ? (assistantSummary.name || t('assistant.defaultName'))
-                    : t('buddy.adoptPrompt'))
+                ? (assistantSummary?.name || t('assistant.defaultName'))
                 : t('dashboard.title')}
             </span>
           </div>
@@ -480,75 +466,25 @@ function DashboardWidgetCard({ widget, refreshing, isFirst, isLast, style, onRef
   );
 }
 
-function getNextRarity(rarity: string): string {
-  const order = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-  const idx = order.indexOf(rarity);
-  return idx < order.length - 1 ? order[idx + 1]! : rarity;
-}
-
-function getRequiredMemories(rarity: string): number {
-  const reqs: Record<string, number> = { common: 10, uncommon: 30, rare: 60, epic: 100 };
-  return reqs[rarity] || 100;
-}
-
-function rarityBorderClass(rarity: string): string {
-  switch (rarity) {
-    case 'legendary': return 'border-amber-500/30 shadow-amber-500/10 shadow-md';
-    case 'epic': return 'border-purple-500/30';
-    case 'rare': return 'border-blue-500/30';
-    case 'uncommon': return 'border-green-500/30';
-    default: return 'border-primary/10';
-  }
-}
-
 /** Built-in assistant status card — injected at the top of assistant workspace dashboards. */
 function AssistantStatusCard({ summary, t }: {
   summary: AssistantSummary;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
 }) {
   const router = useRouter();
-  const buddy = summary.buddy;
-  const cardBorder = buddy
-    ? rarityBorderClass(buddy.rarity)
-    : 'border-primary/10';
+  const displayName = summary.name || t('assistant.defaultName' as TranslationKey);
 
   return (
-    <div className={cn('rounded-lg border bg-primary/[0.03] p-3 space-y-3', cardBorder)}>
-      {/* Header: 3D image + Name + Species + Rarity + Settings gear */}
+    <div className={cn('rounded-lg border bg-primary/[0.03] p-3 space-y-3 border-primary/10')}>
+      {/* Header: Avatar + Name + Settings gear */}
       <div className="flex items-center gap-2">
-        {buddy ? (
-          <img
-            src={SPECIES_IMAGE_URL[buddy.species as Species] || ''}
-            alt={buddy.species}
-            width={40} height={40}
-            className="rounded-lg"
-            style={{ background: RARITY_BG_GRADIENT[buddy.rarity as Rarity] || '' }}
-          />
-        ) : (
-          <img src={EGG_IMAGE_URL} alt="egg" width={40} height={40} />
-        )}
+        <AssistantAvatar name={displayName} size={40} className="rounded-lg" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium truncate">
-              {buddy
-                ? (buddy.buddyName || summary.name || t('assistant.defaultName' as TranslationKey))
-                : t('buddy.adoptPrompt' as TranslationKey)}
-            </span>
-            {buddy && (
-              <span
-                className={cn('inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0', rarityColor(buddy.rarity))}
-                style={{ background: RARITY_BG_GRADIENT[buddy.rarity as Rarity] || '' }}
-              >
-                {RARITY_DISPLAY[buddy.rarity]?.stars} {RARITY_DISPLAY[buddy.rarity]?.label.zh}
-              </span>
-            )}
+            <span className="text-sm font-medium truncate">{displayName}</span>
           </div>
-          {buddy && (
-            <div className="text-[10px] text-muted-foreground truncate">
-              {getBuddyTitle(buddy as BuddyData)
-                ? `${getBuddyTitle(buddy as BuddyData)} · ${SPECIES_LABEL[buddy.species]?.zh || buddy.species}`
-                : SPECIES_LABEL[buddy.species]?.zh || buddy.species}
-            </div>
+          {summary.styleHint && (
+            <div className="text-[10px] text-muted-foreground truncate">{summary.styleHint}</div>
           )}
         </div>
         <Button
@@ -562,36 +498,8 @@ function AssistantStatusCard({ summary, t }: {
         </Button>
       </div>
 
-      {/* Stats bars (when buddy exists) */}
-      {buddy && (
-        <div className="space-y-1.5 mt-3">
-          {Object.entries(buddy.stats).map(([stat, value]) => {
-            const isPeak = stat === buddy.peakStat;
-            return (
-              <div key={stat} className="flex items-center gap-2 text-[11px]">
-                <span className={cn('w-8 truncate', isPeak ? 'text-primary font-medium' : 'text-muted-foreground')}>
-                  {t(`buddy.${stat}` as TranslationKey) || STAT_LABEL[stat]?.zh || stat}
-                </span>
-                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={cn('h-full rounded-full transition-all', isPeak ? 'bg-primary' : 'bg-muted-foreground/40')}
-                    style={{ width: `${value}%` }}
-                  />
-                </div>
-                <span className={cn('w-5 text-right', isPeak ? 'text-primary font-semibold' : 'text-muted-foreground')}>{value}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
       {/* Status row — compact single line */}
       <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-        <div className="flex items-center gap-1">
-          <Heart size={11} />
-          <span className={`h-1.5 w-1.5 rounded-full ${summary.heartbeatEnabled ? 'bg-status-success' : 'bg-muted-foreground/30'}`} />
-          <span>{t('assistant.panel.heartbeat' as TranslationKey)}</span>
-        </div>
         <div className="flex items-center gap-1">
           <Brain size={11} />
           <span>{t('assistant.panel.memories' as TranslationKey)}</span>
@@ -616,70 +524,6 @@ function AssistantStatusCard({ summary, t }: {
           ))}
         </div>
       )}
-
-      {/* Evolution progress (when buddy exists and can potentially evolve) */}
-      {buddy && buddy.rarity !== 'legendary' && (
-        <div className="border-t border-border/30 pt-2 mt-2">
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-            <span>{t('buddy.evolutionProgress' as TranslationKey)}</span>
-            <span>{t('buddy.nextRarity' as TranslationKey)}: {RARITY_DISPLAY[getNextRarity(buddy.rarity) as keyof typeof RARITY_DISPLAY]?.label.zh}</span>
-          </div>
-          {/* Simple progress indicator based on memory count vs requirement */}
-          <div className="h-1 rounded-full bg-muted overflow-hidden">
-            <div className="h-full rounded-full bg-primary/60" style={{ width: `${Math.min(100, (summary.memoryCount / getRequiredMemories(buddy.rarity)) * 100)}%` }} />
-          </div>
-          {/* Check + evolve button when ready */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full mt-1.5 gap-1 text-[10px] h-6 text-muted-foreground"
-            onClick={async () => {
-              try {
-                const res = await fetch('/api/workspace/evolve-buddy', { method: 'POST' });
-                if (res.ok) {
-                  const data = await res.json();
-                  if (data.evolved) {
-                    showToast({ type: 'success', message: `🌟 ${t('buddy.evolutionSuccess' as TranslationKey)}` });
-                    // Refresh summary to show new rarity
-                    window.location.reload();
-                  } else if (data.check) {
-                    const c = data.check;
-                    const parts: string[] = [];
-                    if (c.memoryCount < c.requiredMemories) parts.push(`${t('assistant.panel.memories' as TranslationKey)} ${c.memoryCount}/${c.requiredMemories}`);
-                    if (c.daysActive < c.requiredDays) parts.push(`${t('buddy.daysActive' as TranslationKey)} ${c.daysActive}/${c.requiredDays}`);
-                    showToast({ type: 'info', message: `${t('buddy.evolutionNotReady' as TranslationKey)}: ${parts.join(', ')}` });
-                  }
-                }
-              } catch {
-                showToast({ type: 'error', message: t('buddy.evolutionFailed' as TranslationKey) });
-              }
-            }}
-          >
-            {'\u{1F31F}'} {t('buddy.checkEvolution' as TranslationKey)}
-          </Button>
-        </div>
-      )}
-
-      {/* Hatch buddy button (when no buddy yet) */}
-      {!buddy && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full justify-center gap-2 text-xs h-8"
-          onClick={async () => {
-            try {
-              const res = await fetch('/api/workspace/hatch-buddy', { method: 'POST' });
-              if (res.ok) {
-                // Reload summary to get new buddy data
-                window.location.reload();
-              }
-            } catch { /* ignore */ }
-          }}
-        >
-          🥚 {t('buddy.hatch' as TranslationKey)}
-        </Button>
-      )}
-
     </div>
   );
 }

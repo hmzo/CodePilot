@@ -68,18 +68,18 @@ CodePilot 历史上自己维护了一套 provider 子系统：DB 里有 `api_pro
 | 功能 | 决策 | 理由 |
 |------|------|------|
 | Onboarding（13 题问卷 / 对话式 bootstrap） | ❌ 删除 | 用户反馈"每次新装都跑一遍很烦"，且 Claude Code 自己就能在第一轮对话里学会用户偏好 |
-| Check-in / 心跳问询 UI | ❌ 删除 | 同上；`heartbeat.md` 文件本身保留供模型自主读取 |
+| Check-in / 心跳问询 UI | ❌ 删除 | 同上 |
 | Quick Actions | ❌ 删除 | 用户使用率低；一个按钮调一个 prompt 远不如直接在输入框打字灵活 |
-| Task Scheduler（定时任务） | ❌ 删除 | 跟 buddy 心跳系统职责重叠；buddy 系统已经解决了"定时唤起"问题 |
+| Task Scheduler（定时任务） | ❌ 删除 | 与 buddy/心跳系统职责重叠（后者已于 2026-04-26 一并下线） |
 | Memory Extractor（自动记忆提取） | ❌ 删除 | 误报率高，且 Claude 现在能自己 `Edit memory.md` |
 | Memory Search MCP | ❌ 删除 | Claude Code 自带 `Read`/`Grep` 工具直接读 `memory.md` 即可 |
 | Context Compressor（自动压缩） | ❌ 删除 | Claude Code 内置 `/compact` 命令更好用 |
 | Batch Image Generation Planning（批量生图规划阶段） | ❌ 删除 | 依赖 `text-generator.ts`；用户可以手动列清单 |
 | **图片生成主链路** | ✅ 保留 | `codepilot_generate_image` MCP / 设计 Agent 流程不依赖 provider 配置（直接读 `~/.claude` 里的 Gemini / Anthropic API key） |
-| **Buddy 系统** | ✅ 保留 | 不依赖 provider；心跳改用本地定时器替代 TaskScheduler |
+| ~~**Buddy 系统**~~ | ❌ 后续删除（2026-04-26） | 用户反馈：游戏化噱头多于实用价值；3D 物种图、心跳问询、HEARTBEAT.md 协议、孵化/进化等整套移除 |
 | **Generative UI / Widget 系统** | ✅ 保留 | 不依赖 provider；只是给 system prompt 加 widget 指令 |
 | **Dashboard / 项目看板** | ✅ 保留 | 不依赖 provider |
-| **`codepilot-notify` 通用通知 MCP** | ✅ 保留 | 不依赖 provider；服务于 buddy 系统 |
+| **`codepilot-notify` 通用通知 MCP** | ✅ 保留 | 通用桌面/Telegram 通知出口，不依赖 buddy |
 | **Skills / MCP 管理** | ✅ 保留 | 这是 Claude Code 自身的能力，CodePilot 只是 GUI 包装 |
 | **Bridge 子系统** | ✅ 保留（精简） | 见上一节 |
 
@@ -115,7 +115,7 @@ CodePilot 历史上自己维护了一套 provider 子系统：DB 里有 `api_pro
 
 中期：如果 Anthropic 推出新的官方模型（比如 Claude 5），只需要更新 `src/lib/anthropic-models.ts` 的硬编码清单——一个 PR 的事。
 
-长期：CodePilot 的差异化从"多 provider GUI"转向"Claude Code 的最佳桌面伴侣"——MCP 管理、Skills 市场、IM Bridge 远程控制、buddy 游戏化体验、Generative UI 看板——这些都是 CodePilot 独有、且不依赖 provider 子系统的能力。
+长期：CodePilot 的差异化从"多 provider GUI"转向"Claude Code 的最佳桌面伴侣"——MCP 管理、Skills 市场、IM Bridge 远程控制、Generative UI 看板——这些都是 CodePilot 独有、且不依赖 provider 子系统的能力。
 
 ## 参考
 
