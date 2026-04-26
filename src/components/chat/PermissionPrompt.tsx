@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { ToolUIPart } from 'ai';
-import type { PermissionRequestEvent } from '@/types';
+import { isInteractiveTool, type PermissionRequestEvent } from '@/types';
 
 interface ToolUseInfo {
   id: string;
@@ -384,22 +384,31 @@ export function PermissionPrompt({
 }: PermissionPromptProps) {
   const { t } = useTranslation();
 
-  // Auto-approve when full_access is active
+  // Under full_access we still surface interactive tools (AskUserQuestion /
+  // ExitPlanMode) — they need a real user response, not a blanket allow.
+  // Everything else is auto-approved by claude-client's canUseTool before
+  // the SSE even reaches us, so we'll rarely hit the auto-approve branch
+  // below; it remains as a defensive fallback in case something does slip
+  // through (e.g. a permission_request that was already in flight when the
+  // profile flipped to full_access).
+  const isInteractive = !!pendingPermission && isInteractiveTool(pendingPermission.toolName);
   const autoApprovedRef = useRef<string | null>(null);
   useEffect(() => {
     if (
       permissionProfile === 'full_access' &&
       pendingPermission &&
+      !isInteractive &&
       !permissionResolved &&
       autoApprovedRef.current !== pendingPermission.permissionRequestId
     ) {
       autoApprovedRef.current = pendingPermission.permissionRequestId;
       onPermissionResponse('allow');
     }
-  }, [permissionProfile, pendingPermission, permissionResolved, onPermissionResponse]);
+  }, [permissionProfile, pendingPermission, isInteractive, permissionResolved, onPermissionResponse]);
 
-  // Don't render permission UI when full_access
-  if (permissionProfile === 'full_access') return null;
+  // In full_access, hide the prompt UI for non-interactive tools (they're
+  // auto-approved). Interactive tools always render so the user can answer.
+  if (permissionProfile === 'full_access' && !isInteractive) return null;
 
   // Nothing to show
   if (!pendingPermission && !permissionResolved) return null;

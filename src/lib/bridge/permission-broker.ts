@@ -16,6 +16,7 @@ import { deliver } from './delivery-layer';
 import { insertPermissionLink, getPermissionLink, markPermissionLinkResolved, getSession, getDb } from '../db';
 import { resolvePendingPermission } from '../permission-registry';
 import { escapeHtml } from './adapters/telegram-utils';
+import { isInteractiveTool } from '@/types';
 
 /**
  * Dedup recent permission forwards to prevent duplicate cards.
@@ -36,10 +37,13 @@ export async function forwardPermissionRequest(
   suggestions?: unknown[],
   replyToMessageId?: string,
 ): Promise<void> {
-  // Check if this session uses full_access permission profile — auto-approve without IM notification
+  // Check if this session uses full_access permission profile — auto-approve
+  // without IM notification. Interactive tools (AskUserQuestion / ExitPlanMode)
+  // are excluded: they need actual user input, so we still forward them to the
+  // IM channel even under full_access.
   if (sessionId) {
     const session = getSession(sessionId);
-    if (session?.permission_profile === 'full_access') {
+    if (session?.permission_profile === 'full_access' && !isInteractiveTool(toolName)) {
       console.log(`[bridge] Auto-approved permission ${permissionRequestId} (tool=${toolName}) due to full_access profile`);
       resolvePendingPermission(permissionRequestId, { behavior: 'allow' });
       return;
@@ -229,6 +233,9 @@ export function handlePermissionCallback(
  * Auto-approve all pending permission requests for a session.
  * Called when a session switches from 'default' to 'full_access' profile.
  * Resolves in-memory pending permissions and marks DB links as resolved.
+ *
+ * Interactive tools (AskUserQuestion / ExitPlanMode) are skipped — they need
+ * a real user response, not a blanket allow, so we leave them pending.
  */
 export function autoApprovePendingForSession(sessionId: string): number {
   // The permission_requests DB table tracks pending permissions by session_id.
@@ -236,11 +243,15 @@ export function autoApprovePendingForSession(sessionId: string): number {
   const db = getDb();
 
   const pendingRows = db.prepare(
-    "SELECT id FROM permission_requests WHERE session_id = ? AND status = 'pending'"
-  ).all(sessionId) as { id: string }[];
+    "SELECT id, tool_name FROM permission_requests WHERE session_id = ? AND status = 'pending'"
+  ).all(sessionId) as { id: string; tool_name: string }[];
 
   let resolved = 0;
   for (const row of pendingRows) {
+    if (isInteractiveTool(row.tool_name)) {
+      console.log(`[bridge] Leaving interactive permission ${row.id} (tool=${row.tool_name}) pending despite full_access switch`);
+      continue;
+    }
     const ok = resolvePendingPermission(row.id, { behavior: 'allow' });
     if (ok) {
       resolved++;

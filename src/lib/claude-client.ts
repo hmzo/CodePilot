@@ -14,7 +14,7 @@ import type {
   McpServerConfig,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ClaudeStreamOptions, SSEEvent, TokenUsage, MCPServerConfig, PermissionRequestEvent, FileAttachment, MediaBlock } from '@/types';
-import { isImageFile } from '@/types';
+import { isImageFile, isInteractiveTool } from '@/types';
 import { registerPendingPermission } from './permission-registry';
 import { registerConversation, unregisterConversation } from './conversation-registry';
 import { captureCapabilities, isCacheFresh, setCachedPlugins } from './agent-sdk-capabilities';
@@ -471,15 +471,25 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         }
 
 
-        // Check if dangerously_skip_permissions is enabled globally or per-session
+        // Two kinds of "skip permissions":
+        //   - globalSkip: advanced user opt-in via dangerously_skip_permissions
+        //     setting. Truly bypasses everything at SDK level (canUseTool not
+        //     called for ANY tool). Power-user / headless-automation only.
+        //   - sessionBypassPermissions: per-session full_access profile. Auto-
+        //     approves regular tool permissions, but interactive tools that
+        //     need user-supplied input (AskUserQuestion, ExitPlanMode) MUST
+        //     still go through canUseTool so the user can actually answer.
+        //     If we used SDK-level bypass here, the SDK would never invoke
+        //     canUseTool — AskUserQuestion would run without user answers and
+        //     just default to the first option (#388 / "ask question 默认选第
+        //     一个" bug).
         const globalSkip = getSetting('dangerously_skip_permissions') === 'true';
-        const skipPermissions = globalSkip || !!sessionBypassPermissions;
 
         const queryOptions: Options = {
           cwd: resolvedWorkingDirectory.path,
           abortController,
           includePartialMessages: true,
-          permissionMode: skipPermissions
+          permissionMode: globalSkip
             ? 'bypassPermissions'
             : ((permissionMode as Options['permissionMode']) || 'acceptEdits'),
           env: sanitizeEnv(sdkEnv),
@@ -490,7 +500,7 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
           settingSources: ['user', 'project', 'local'],
         };
 
-        if (skipPermissions) {
+        if (globalSkip) {
           queryOptions.allowDangerouslySkipPermissions = true;
         }
 
@@ -715,8 +725,6 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         queryOptions.canUseTool = async (toolName, input, opts) => {
           // Auto-approve CodePilot's own in-process MCP tools — they are internal
           // and the user has already opted in by enabling the relevant mode.
-          // Auto-approve CodePilot's own in-process MCP tools — they are internal
-          // and the user has already opted in by enabling the relevant mode.
           // Note: SDK prefixes MCP tool names with mcp__<server>__, so we check
           // both bare and prefixed names.
           const autoApprovedTools = [
@@ -734,6 +742,15 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
             'codepilot_dashboard_remove',
           ];
           if (autoApprovedTools.some(t => toolName === t || toolName.endsWith(`__${t}`))) {
+            return { behavior: 'allow' as const, updatedInput: input };
+          }
+
+          // Session-level full_access: auto-approve regular tool calls, but
+          // still route interactive tools (AskUserQuestion / ExitPlanMode)
+          // through the normal permission flow so the user can actually
+          // provide input. Without this exception the SDK runs AskUserQuestion
+          // with no answers and the model effectively picks the first option.
+          if (sessionBypassPermissions && !isInteractiveTool(toolName)) {
             return { behavior: 'allow' as const, updatedInput: input };
           }
 

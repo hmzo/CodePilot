@@ -372,6 +372,29 @@ export interface PermissionRequestEvent {
   description?: string;
 }
 
+/**
+ * Tools that genuinely need user-supplied input (not just a yes/no approval).
+ * These must NOT be auto-approved by the full_access profile or by IM bridge
+ * auto-allow logic — the user has to actually answer / confirm them.
+ *
+ * - AskUserQuestion: the model asks the user a multiple-choice question; the
+ *   user's selected option(s) are passed back via updatedInput.answers.
+ * - ExitPlanMode: signals the agent wants to leave plan mode and start
+ *   executing; the user must approve (or reject with feedback) before the
+ *   model commits to the plan.
+ *
+ * Skipping these would make the model proceed without real user intent —
+ * AskUserQuestion in particular silently degrades to "first option wins".
+ */
+export const INTERACTIVE_TOOLS = new Set<string>([
+  'AskUserQuestion',
+  'ExitPlanMode',
+]);
+
+export function isInteractiveTool(toolName: string): boolean {
+  return INTERACTIVE_TOOLS.has(toolName);
+}
+
 export interface PermissionResponseRequest {
   permissionRequestId: string;
   decision: {
