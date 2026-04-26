@@ -816,6 +816,12 @@ app.whenReady().then(async () => {
     return shell.openPath(folderPath);
   });
 
+  // Reveal a file/folder in the system file manager (selects it in parent folder)
+  ipcMain.handle('shell:show-item-in-folder', async (_event: Electron.IpcMainInvokeEvent, itemPath: string) => {
+    shell.showItemInFolder(itemPath);
+    return { ok: true };
+  });
+
   // Bridge status IPC
   ipcMain.handle('bridge:is-active', async () => {
     return isBridgeActive();

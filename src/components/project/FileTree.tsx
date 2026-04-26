@@ -1,9 +1,24 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowsClockwise, MagnifyingGlass, FileCode, Code, File } from "@/components/ui/icon";
+import {
+  ArrowsClockwise,
+  MagnifyingGlass,
+  FileCode,
+  Code,
+  File,
+  ArrowSquareOut,
+  Copy,
+} from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import type { FileTreeNode } from "@/types";
 import {
@@ -77,7 +92,101 @@ function filterTree(nodes: FileTreeNode[], query: string): FileTreeNode[] {
     }));
 }
 
-function RenderTreeNodes({ nodes, searchQuery }: { nodes: FileTreeNode[]; searchQuery: string }) {
+/**
+ * Compute a path relative to baseDir without using node:path (this is a client component).
+ * Falls back to the absolute path when the target is not under baseDir.
+ */
+function getRelativePath(absolutePath: string, baseDir: string): string {
+  if (!baseDir) return absolutePath;
+  const normalize = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const target = normalize(absolutePath);
+  const base = normalize(baseDir);
+  if (target === base) return ".";
+  const prefix = base + "/";
+  if (target.startsWith(prefix)) {
+    return target.slice(prefix.length);
+  }
+  return absolutePath;
+}
+
+/** Detect file-manager label based on platform. Falls back to a generic label on web. */
+function useRevealLabel(): string {
+  const { t } = useTranslation();
+  const platform =
+    typeof window !== "undefined"
+      ? window.electronAPI?.versions?.platform ?? ""
+      : "";
+  if (platform === "darwin") return t("fileTree.revealInFinder");
+  if (platform === "win32") return t("fileTree.revealInExplorer");
+  return t("fileTree.revealInFolder");
+}
+
+async function revealInFileManager(path: string) {
+  if (typeof window !== "undefined" && window.electronAPI?.shell?.showItemInFolder) {
+    await window.electronAPI.shell.showItemInFolder(path);
+    return;
+  }
+  await fetch("/api/files/open", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, reveal: true }),
+  }).catch(() => {});
+}
+
+interface FileTreeItemMenuProps {
+  node: FileTreeNode;
+  workingDirectory: string;
+  children: ReactNode;
+}
+
+function FileTreeItemMenu({ node, workingDirectory, children }: FileTreeItemMenuProps) {
+  const { t } = useTranslation();
+  const revealLabel = useRevealLabel();
+
+  const handleReveal = useCallback(() => {
+    void revealInFileManager(node.path);
+  }, [node.path]);
+
+  const handleCopyPath = useCallback(() => {
+    void navigator.clipboard.writeText(node.path);
+  }, [node.path]);
+
+  const handleCopyRelativePath = useCallback(() => {
+    const rel = getRelativePath(node.path, workingDirectory);
+    void navigator.clipboard.writeText(rel);
+  }, [node.path, workingDirectory]);
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent className="min-w-[200px]">
+        <ContextMenuItem onSelect={handleReveal}>
+          <ArrowSquareOut size={14} />
+          <span>{revealLabel}</span>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={handleCopyPath}>
+          <Copy size={14} />
+          <span>{t("fileTree.copyPath")}</span>
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={handleCopyRelativePath}>
+          <Copy size={14} />
+          <span>{t("fileTree.copyRelativePath")}</span>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+function RenderTreeNodes({
+  nodes,
+  searchQuery,
+  workingDirectory,
+}: {
+  nodes: FileTreeNode[];
+  searchQuery: string;
+  workingDirectory: string;
+}) {
   const filtered = searchQuery ? filterTree(nodes, searchQuery) : nodes;
 
   return (
@@ -85,20 +194,35 @@ function RenderTreeNodes({ nodes, searchQuery }: { nodes: FileTreeNode[]; search
       {filtered.map((node) => {
         if (node.type === "directory") {
           return (
-            <FileTreeFolder key={node.path} path={node.path} name={node.name}>
-              {node.children && (
-                <RenderTreeNodes nodes={node.children} searchQuery={searchQuery} />
-              )}
-            </FileTreeFolder>
+            <FileTreeItemMenu
+              key={node.path}
+              node={node}
+              workingDirectory={workingDirectory}
+            >
+              <FileTreeFolder path={node.path} name={node.name}>
+                {node.children && (
+                  <RenderTreeNodes
+                    nodes={node.children}
+                    searchQuery={searchQuery}
+                    workingDirectory={workingDirectory}
+                  />
+                )}
+              </FileTreeFolder>
+            </FileTreeItemMenu>
           );
         }
         return (
-          <FileTreeFile
+          <FileTreeItemMenu
             key={node.path}
-            path={node.path}
-            name={node.name}
-            icon={getFileIcon(node.extension)}
-          />
+            node={node}
+            workingDirectory={workingDirectory}
+          >
+            <FileTreeFile
+              path={node.path}
+              name={node.name}
+              icon={getFileIcon(node.extension)}
+            />
+          </FileTreeItemMenu>
         );
       })}
     </>
@@ -225,7 +349,11 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd }: FileTree
             onAdd={onFileAdd}
             className="border-0 rounded-none"
           >
-            <RenderTreeNodes nodes={tree} searchQuery={searchQuery} />
+            <RenderTreeNodes
+              nodes={tree}
+              searchQuery={searchQuery}
+              workingDirectory={workingDirectory}
+            />
           </AIFileTree>
         )}
       </div>

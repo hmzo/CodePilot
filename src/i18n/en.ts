@@ -160,6 +160,11 @@ const en = {
   'fileTree.refresh': 'Refresh',
   'fileTree.noFiles': 'No files found',
   'fileTree.selectFolder': 'Select a project folder to view files',
+  'fileTree.revealInFinder': 'Reveal in Finder',
+  'fileTree.revealInExplorer': 'Reveal in Explorer',
+  'fileTree.revealInFolder': 'Open Containing Folder',
+  'fileTree.copyPath': 'Copy Path',
+  'fileTree.copyRelativePath': 'Copy Relative Path',
 
   // ── File preview ────────────────────────────────────────────
   'filePreview.backToTree': 'Back to file tree',

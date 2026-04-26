@@ -121,8 +121,9 @@ export const FileTreeFolder = ({
   name,
   className,
   children,
+  ref,
   ...props
-}: FileTreeFolderProps) => {
+}: FileTreeFolderProps & { ref?: React.Ref<HTMLDivElement> }) => {
   const { expandedPaths, togglePath } =
     useContext(FileTreeContext);
   const isExpanded = expandedPaths.has(path);
@@ -139,14 +140,14 @@ export const FileTreeFolder = ({
   return (
     <FileTreeFolderContext.Provider value={folderContextValue}>
       <Collapsible onOpenChange={handleToggle} open={isExpanded}>
-        <div
-          className={cn("", className)}
-          role="treeitem"
-          {...props}
-        >
+        <div role="treeitem">
           <CollapsibleTrigger asChild>
             <div
-              className="flex w-full cursor-pointer items-center gap-1 rounded px-2 py-1 text-left transition-colors hover:bg-muted/50"
+              ref={ref}
+              className={cn(
+                "flex w-full cursor-pointer items-center gap-1 rounded px-2 py-1 text-left transition-colors hover:bg-muted/50",
+                className
+              )}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
@@ -155,6 +156,7 @@ export const FileTreeFolder = ({
                   handleToggle();
                 }
               }}
+              {...props}
             >
               <span className="shrink-0 rounded p-0.5">
                 <CaretRight
@@ -206,8 +208,9 @@ export const FileTreeFile = ({
   icon,
   className,
   children,
+  ref,
   ...props
-}: FileTreeFileProps) => {
+}: FileTreeFileProps & { ref?: React.Ref<HTMLDivElement> }) => {
   const { selectedPath, onSelect, onAdd } = useContext(FileTreeContext);
   const isSelected = selectedPath === path;
 
@@ -237,6 +240,7 @@ export const FileTreeFile = ({
   return (
     <FileTreeFileContext.Provider value={fileContextValue}>
       <div
+        ref={ref}
         className={cn(
           "group/file flex cursor-pointer items-center gap-1 rounded px-2 py-1 transition-colors hover:bg-muted/50",
           isSelected && "bg-muted",

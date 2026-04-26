@@ -157,6 +157,11 @@ const zh: Record<TranslationKey, string> = {
   'fileTree.refresh': '刷新',
   'fileTree.noFiles': '未找到文件',
   'fileTree.selectFolder': '选择项目文件夹以查看文件',
+  'fileTree.revealInFinder': '在 Finder 中显示',
+  'fileTree.revealInExplorer': '在资源管理器中显示',
+  'fileTree.revealInFolder': '打开所在文件夹',
+  'fileTree.copyPath': '复制路径',
+  'fileTree.copyRelativePath': '复制相对路径',
 
   // ── File preview ────────────────────────────────────────────
   'filePreview.backToTree': '返回文件树',

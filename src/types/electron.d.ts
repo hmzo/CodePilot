@@ -54,6 +54,7 @@ interface ElectronAPI {
   };
   shell: {
     openPath: (path: string) => Promise<string>;
+    showItemInFolder: (path: string) => Promise<{ ok: boolean }>;
   };
   dialog: {
     openFolder: (options?: {
