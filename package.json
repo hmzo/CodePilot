@@ -1,6 +1,6 @@
 {
   "name": "codepilot",
-  "version": "0.48.0",
+  "version": "0.50.0",
   "claudeCodeVersion": "2.1.119",
   "private": true,
   "license": "BUSL-1.1",

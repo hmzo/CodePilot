@@ -1,38 +1,46 @@
-## CodePilot v0.49.0
+## CodePilot v0.50.0
 
-> 内置 Claude Code 原生二进制：不再依赖 Node.js，下载安装包就能直接聊。
+> CodePilot 退化为「纯 Claude Code GUI」：删除 provider 子系统、内置 Claude Code 二进制、移除 Sentry / Buddy / 助理工作区三波非核心功能，专注做最舒服的 Claude Code 桌面客户端。
 
 ### 新增功能
 
-- **内置 Claude Code**：CodePilot 安装包现在直接捆绑 Claude Code v2.1.119 原生二进制（macOS arm64/x64、Windows x64），无需提前安装 Node.js、`npm install -g @anthropic-ai/claude-code` 或 `curl claude.ai/install.sh`，下载即用
-- 用户机器上其他渠道安装的 `claude`（npm/Bun/Homebrew/winget 等）会在设置页做信息展示，CodePilot 始终使用内置版本，避免版本错乱
-- 启动时把内置 claude 目录前置到子进程的 PATH，所有 SDK 工具调用都能找到正确版本
+- **内置 Claude Code 原生二进制**：安装包直接捆绑 Claude Code v2.1.119（macOS arm64/x64、Windows x64），不再需要 Node.js 或 `npm install -g @anthropic-ai/claude-code`，下载即用
+- **飞书桥接：扫码一键注册个人机器人**：不再需要去开放平台手动建应用，扫描二维码即可自动获取 App ID / Secret
+- **文件树右键菜单**：文件 / 文件夹支持「复制绝对路径」「复制相对路径」「在 Finder / 资源管理器中显示」
+- 所有第三方渠道安装的 `claude`（npm / Bun / Homebrew / winget）会在设置中做信息展示，但 CodePilot 始终使用内置版本，避免版本错乱
 
 ### 修复问题
 
-- 修复在没有 Node.js 的干净系统上 CodePilot 启动后无法发送消息的问题（根因：旧版本依赖用户预装 Claude Code CLI）
+- 修复 full_access 模式下 AskUserQuestion 工具默认选中第一个答案、不等用户操作的问题
+- 修复权限弹窗 PermissionPrompt 的 useEffect 依赖数组在不同渲染间形状不一致导致的 React 警告
+- 修复在没有 Node.js 的干净系统上无法发消息的问题（根因：旧版本依赖用户预装 Claude Code CLI）
+- 修复侧边栏在 1024–1280px 屏幕宽度区间被强制隐藏的问题（断点从 lg 调整到 md）
 
 ### 优化改进
 
-- Connection Status 状态胶囊改为「内置 vX.Y.Z」直接展示，去掉「请安装/请升级」流程
-- 删除应用内的 Claude Code 安装向导和后台升级流程（约 400+ 行 IPC + UI 代码）
+- **品牌定位收敛**：CodePilot 退化为纯 Claude Code GUI 客户端，删除 provider 子系统（OpenRouter / 智谱 / Kimi / Ollama 等多服务商配置），认证只走 Anthropic 凭据
+- **移除匿名错误上报（Sentry）**：完全删除 Sentry 集成与相关 UI，不再向第三方发送任何错误数据
+- **移除 Buddy 游戏化系统**：删除 16 张 3D 物种图、孵化 / 进化机制、AI 心跳系统等约 7000+ 行代码
+- **移除助理工作区**：删除 `soul.md` / `user.md` / `memory.md` / onboarding 等所有相关 API、UI 和数据库字段；产品形态进一步收敛
+- Connection Status 状态胶囊改为「内置 vX.Y.Z」直接展示，去掉「请安装 / 请升级」流程
+- Windows 安装包默认语言改为简体中文
 - macOS 构建中 `Contents/Resources/claude/claude` 跟随主应用一起用 Developer ID 重签 + hardened runtime，`codesign --verify --deep --strict` 通过
-- 安装包体积每个架构增加约 200MB（DMG 从 ~150MB 增加到 ~350MB），换来零依赖、离线可用
 
 ### 已知影响
 
-- 单平台 DMG/EXE 文件体积约翻倍，下载耗时更长
-- 内置 Claude Code 版本随 CodePilot 一起发版升级，不再支持后台静默升级；如果想跑更新版本，请等待下一次 CodePilot 发版
+- **不兼容旧 provider 配置**：升级后非 Anthropic 服务商配置会失效，需要切换到官方凭据或 Claude Code 兼容代理
+- 单平台 DMG / EXE 文件体积约翻倍（macOS ~350MB / Windows ~250MB），换来零依赖、离线可用
+- 内置 Claude Code 版本随 CodePilot 一起发版升级，不再支持后台静默升级
 - Windows 仍需手动安装 Git for Windows 才能让 Claude Code 的 shell 工具调用正常工作（应用内提供一键安装）
 
 ## 下载地址
 
 ### macOS
-- [Apple Silicon (M1/M2/M3/M4)](https://github.com/op7418/CodePilot/releases/download/v0.49.0/CodePilot-0.49.0-arm64.dmg)
-- [Intel](https://github.com/op7418/CodePilot/releases/download/v0.49.0/CodePilot-0.49.0-x64.dmg)
+- [Apple Silicon (M1/M2/M3/M4)](https://github.com/hmzo/CodePilot/releases/download/v0.50.0/CodePilot-0.50.0-arm64.dmg)
+- [Intel](https://github.com/hmzo/CodePilot/releases/download/v0.50.0/CodePilot-0.50.0-x64.dmg)
 
 ### Windows
-- [Windows 安装包](https://github.com/op7418/CodePilot/releases/download/v0.49.0/CodePilot.Setup.0.49.0.exe)
+- [Windows 安装包](https://github.com/hmzo/CodePilot/releases/download/v0.50.0/CodePilot.Setup.0.50.0.exe)
 
 ## 安装说明
 
