@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
 import type { Message, MessagesResponse, FileAttachment, SessionStreamSnapshot } from '@/types';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
@@ -10,14 +9,11 @@ import { ModeIndicator } from './ModeIndicator';
 import { ChatPermissionSelector } from './ChatPermissionSelector';
 import { ContextUsageIndicator } from './ContextUsageIndicator';
 import { ImageGenToggle } from './ImageGenToggle';
-import { Button } from '@/components/ui/button';
 import { usePanel } from '@/hooks/usePanel';
-import { useTranslation } from '@/hooks/useTranslation';
 import { PermissionPrompt } from './PermissionPrompt';
 import { BatchExecutionDashboard, BatchContextSync } from './batch-image-gen';
 import { setLastGeneratedImages, loadLastGenerated } from '@/lib/image-ref-store';
 import { useChatCommands } from '@/hooks/useChatCommands';
-import { useAssistantTrigger } from '@/hooks/useAssistantTrigger';
 import { useStreamSubscription } from '@/hooks/useStreamSubscription';
 import {
   startStream,
@@ -42,18 +38,10 @@ interface ChatViewProps {
 const MAX_MESSAGES_IN_MEMORY = 300;
 
 export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, initialPermissionProfile, initialMode, initialHasSummary }: ChatViewProps) {
-  const { setStreamingSessionId, workingDirectory, setPendingApprovalSessionId, setDashboardPanelOpen, setFileTreeOpen, setIsAssistantWorkspace } = usePanel();
-  const { t } = useTranslation();
-  const router = useRouter();
+  const { setStreamingSessionId, workingDirectory, setPendingApprovalSessionId, setDashboardPanelOpen, setFileTreeOpen } = usePanel();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [permissionProfile, setPermissionProfile] = useState<'default' | 'full_access'>(initialPermissionProfile || 'default');
 
-  // Whether this session's working directory matches the configured assistant workspace
-  const [isAssistantProject, setIsAssistantProject] = useState(false);
-  const [assistantName, setAssistantName] = useState('');
-
-  // Workspace mismatch banner state
-  const [workspaceMismatchPath, setWorkspaceMismatchPath] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
@@ -229,97 +217,6 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
     if (thinkingMode === 'disabled') return { type: 'disabled' };
     return undefined;
   }, [thinkingMode]);
-
-  const checkAssistantTrigger = useAssistantTrigger({
-    sessionId,
-    workingDirectory,
-    isStreaming,
-    mode,
-    currentModel,
-    initialMessages,
-    handleModeChange,
-    buildThinkingConfig,
-    sendMessageRef,
-    initMetaRef,
-  });
-
-  // Detect workspace mismatch
-  useEffect(() => {
-    if (!workingDirectory) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/settings/workspace');
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (cancelled) return;
-
-        if (data.path && workingDirectory !== data.path) {
-          setIsAssistantProject(false);
-          setIsAssistantWorkspace(false);
-          const inspectRes = await fetch(`/api/workspace/inspect?path=${encodeURIComponent(workingDirectory)}`);
-          if (!inspectRes.ok || cancelled) return;
-          const inspectData = await inspectRes.json();
-          if (inspectData.hasAssistantData) {
-            setWorkspaceMismatchPath(data.path);
-          } else {
-            setWorkspaceMismatchPath(null);
-          }
-        } else {
-          // workingDirectory matches assistant workspace path
-          const isAssistant = !!data.path;
-          setIsAssistantProject(isAssistant);
-          setWorkspaceMismatchPath(null);
-          setIsAssistantWorkspace(isAssistant);
-          // Default panel is now controlled by the user's "Default Side Panel" setting
-          // in chat/[id]/page.tsx — no longer force-override for assistant workspaces.
-          // Load assistant name for avatar display
-          if (data.path) {
-            try {
-              const summaryRes = await fetch('/api/workspace/summary');
-              if (summaryRes.ok && !cancelled) {
-                const summary = await summaryRes.json();
-                setAssistantName(summary.name || '');
-              }
-            } catch { /* ignore */ }
-          }
-        }
-      } catch {
-        // ignore
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [workingDirectory]);
-
-  // Listen for workspace-switched events
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.newPath && workingDirectory && workingDirectory === detail.oldPath) {
-        setWorkspaceMismatchPath(detail.newPath);
-      }
-    };
-    window.addEventListener('assistant-workspace-switched', handler);
-    return () => window.removeEventListener('assistant-workspace-switched', handler);
-  }, [workingDirectory]);
-
-  const handleOpenNewAssistant = useCallback(async () => {
-    try {
-      const model = typeof window !== 'undefined' ? localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) || '' : '';
-      const res = await fetch('/api/workspace/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        window.dispatchEvent(new CustomEvent('session-created'));
-        router.push(`/chat/${data.session.id}`);
-      }
-    } catch (e) {
-      console.error('[ChatView] Failed to open assistant session:', e);
-    }
-  }, [router]);
 
   const loadEarlierMessages = useCallback(async () => {
     if (loadingMoreRef.current || !hasMore || messages.length === 0) return;
@@ -520,20 +417,6 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Workspace mismatch banner */}
-      {workspaceMismatchPath && (
-        <div className="flex items-center justify-between gap-3 border-b border-status-warning/30 bg-status-warning-muted px-4 py-2">
-          <span className="text-xs text-status-warning-foreground">
-            {t('assistant.switchedBanner', { path: workspaceMismatchPath })}
-          </span>
-          <Button
-            onClick={handleOpenNewAssistant}
-            className="shrink-0 rounded-md bg-status-warning px-3 py-1 text-xs font-medium text-white hover:bg-status-warning/80 transition-colors"
-          >
-            {t('assistant.openNewAssistant')}
-          </Button>
-        </div>
-      )}
       <MessageList
         messages={messages}
         streamingContent={streamingContent}
@@ -549,8 +432,6 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
         onLoadMore={loadEarlierMessages}
         rewindPoints={rewindPoints}
         sessionId={sessionId}
-        isAssistantProject={isAssistantProject}
-        assistantName={assistantName}
       />
       {/* Permission prompt */}
       <PermissionPrompt
@@ -575,7 +456,6 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
         modelName={currentModel}
         onModelChange={handleModelChange}
         workingDirectory={workingDirectory}
-        onAssistantTrigger={checkAssistantTrigger}
         effort={selectedEffort}
         onEffortChange={setSelectedEffort}
         sdkInitMeta={initMetaRef.current}

@@ -48,7 +48,6 @@
 | active/composer-refactor.md | Composer 输入区重构 | 进行中 |
 | active/context-storage-migration.md | 上下文共享与存储迁移 | Phase 0 部分完成，Phase 1-3 待开始 |
 | active/git-terminal-integration.md | Git 集成 + 终端 + 统一布局 | 进行中 |
-| active/memory-system-v3.md | 记忆系统 V3 / 心跳协议 | 进行中 |
 | active/open-issues-2026-03-12.md | 公开问题跟踪 | 滚动更新 |
 | active/qq-bridge-channel.md | QQ Bridge 通道 | 进行中 |
 | active/site-and-docs.md | 官网 + 文档站（apps/site） | Phase 0-1 进行中 |
@@ -59,7 +58,6 @@
 
 | 文件 | 主题 | 完成日期 |
 |------|------|----------|
-| completed/assistant-workspace.md | 助理工作区（人格/记忆/对话式引导/落盘） | 已完成 |
 | completed/cli-upgrade-proxy.md | CLI 版本检测 + 升级 + 系统代理透传 | 已完成 |
 | completed/engineering-quality-assurance.md | 工程质量保障体系（Harness Engineering）— 验证闭环、AI 文档、CDP、执行计划 | 2026-03-04 |
 | completed/provider-governance.md | 服务商系统治理（已废弃，整套 provider 系统已删除） | 2026-04-25 |

@@ -1,17 +1,16 @@
 "use client";
 
 import { useState, useCallback, useSyncExternalStore } from "react";
-import { type Icon, Gear, Code, UserCircle, ChartBar } from "@/components/ui/icon";
+import { type Icon, Gear, Code, ChartBar } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GeneralSection } from "./GeneralSection";
 import { CliSettingsSection } from "./CliSettingsSection";
 import { UsageStatsSection } from "./UsageStatsSection";
-import { AssistantWorkspaceSection } from "./AssistantWorkspaceSection";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
 
-type Section = "general" | "cli" | "usage" | "assistant";
+type Section = "general" | "cli" | "usage";
 
 interface SidebarItem {
   id: Section;
@@ -23,7 +22,6 @@ const sidebarItems: SidebarItem[] = [
   { id: "general", label: "General", icon: Gear },
   { id: "cli", label: "Claude CLI", icon: Code },
   { id: "usage", label: "Usage", icon: ChartBar },
-  { id: "assistant", label: "Assistant", icon: UserCircle },
 ];
 
 function getSectionFromHash(): Section {
@@ -55,13 +53,11 @@ export function SettingsLayout() {
     'General': 'settings.general',
     'Claude CLI': 'settings.claudeCli',
     'Usage': 'settings.usage',
-    'Assistant': 'settings.assistant',
   };
 
   const handleSectionChange = useCallback((section: Section) => {
     setOverrideSection(section);
     window.history.replaceState(null, "", `/settings#${section}`);
-    // Clear override so subsequent hash changes take effect
     queueMicrotask(() => setOverrideSection(null));
   }, []);
 
@@ -100,7 +96,6 @@ export function SettingsLayout() {
           {activeSection === "general" && <GeneralSection />}
           {activeSection === "cli" && <CliSettingsSection />}
           {activeSection === "usage" && <UsageStatsSection />}
-          {activeSection === "assistant" && <AssistantWorkspaceSection />}
         </div>
       </div>
     </div>

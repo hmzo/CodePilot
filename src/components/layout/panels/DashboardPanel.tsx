@@ -1,35 +1,22 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { X, ArrowClockwise, CaretUp, CaretDown, ChartBar, Trash, DownloadSimple, Brain, Check, Warning, Gear } from "@/components/ui/icon";
+import { X, ArrowClockwise, CaretUp, CaretDown, ChartBar, Trash, DownloadSimple } from "@/components/ui/icon";
 import { showToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/button";
 import { usePanel } from "@/hooks/usePanel";
 import { useTranslation } from "@/hooks/useTranslation";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { WidgetRenderer } from "@/components/chat/WidgetRenderer";
-import { AssistantAvatar } from "@/components/ui/AssistantAvatar";
 import type { DashboardConfig, DashboardWidget } from "@/types/dashboard";
 import type { TranslationKey } from "@/i18n";
-import { cn } from "@/lib/utils";
 
 const DASHBOARD_MIN_WIDTH = 320;
 const DASHBOARD_MAX_WIDTH = 800;
 const DASHBOARD_DEFAULT_WIDTH = 480;
 
-interface AssistantSummary {
-  configured: boolean;
-  name: string;
-  styleHint?: string;
-  onboardingComplete: boolean;
-  memoryCount: number;
-  recentDailyDates?: string[];
-  fileHealth?: Record<string, boolean>;
-}
-
 export function DashboardPanel() {
-  const { setDashboardPanelOpen, workingDirectory, isAssistantWorkspace } = usePanel();
+  const { setDashboardPanelOpen, workingDirectory } = usePanel();
   const { t } = useTranslation();
   const [width, setWidth] = useState(DASHBOARD_DEFAULT_WIDTH);
   const [config, setConfig] = useState<DashboardConfig | null>(null);
@@ -38,22 +25,11 @@ export function DashboardPanel() {
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
   const [autoRefresh, setAutoRefresh] = useState(false);
   const initialLoadDone = useRef(false);
-  const [assistantSummary, setAssistantSummary] = useState<AssistantSummary | null>(null);
-
-  // Load assistant summary for assistant workspace dashboards
-  useEffect(() => {
-    if (!isAssistantWorkspace) { setAssistantSummary(null); return; }
-    fetch('/api/workspace/summary')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => setAssistantSummary(data))
-      .catch(() => {});
-  }, [isAssistantWorkspace]);
 
   const handleResize = useCallback((delta: number) => {
     setWidth((w) => Math.min(DASHBOARD_MAX_WIDTH, Math.max(DASHBOARD_MIN_WIDTH, w - delta)));
   }, []);
 
-  // Load dashboard config
   const loadDashboard = useCallback(async () => {
     if (!workingDirectory) return;
     try {
@@ -70,12 +46,10 @@ export function DashboardPanel() {
     }
   }, [workingDirectory]);
 
-  // Load on mount
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
 
-  // Auto-refresh on open
   useEffect(() => {
     if (!initialLoadDone.current && config && autoRefresh && config.widgets.length > 0) {
       initialLoadDone.current = true;
@@ -107,7 +81,6 @@ export function DashboardPanel() {
       }, 3000);
       return () => clearInterval(interval);
     } else if (wasStreamingRef.current) {
-      // Streaming just ended — do a final fetch to catch any last-moment changes
       wasStreamingRef.current = false;
       loadDashboard();
     }
@@ -119,7 +92,6 @@ export function DashboardPanel() {
     const handler = (e: Event) => {
       const { topic, data, sourceIframe } = (e as CustomEvent).detail || {};
       if (!panelRef.current) return;
-      // Ignore events from iframes outside the dashboard panel
       if (sourceIframe && !panelRef.current.contains(sourceIframe)) return;
       const iframes = panelRef.current.querySelectorAll('iframe[title]');
       iframes.forEach(iframe => {
@@ -189,8 +161,6 @@ export function DashboardPanel() {
       if (res.ok) {
         const data = await res.json();
         setConfig(data);
-        // Notify chat widgets that a pin was removed
-        // No need to notify chat Pin buttons — they are stateless triggers
       }
     } catch (e) {
       console.error('[DashboardPanel] Delete widget failed:', e);
@@ -211,10 +181,9 @@ export function DashboardPanel() {
     } else if (direction === 'down' && idx < widgets.length - 1) {
       [widgets[idx], widgets[idx + 1]] = [widgets[idx + 1], widgets[idx]];
     } else {
-      return; // no change
+      return;
     }
     setConfig({ ...config, widgets });
-    // Persist absolute order (race-free — last write wins with correct final state)
     fetch('/api/dashboard', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -234,7 +203,7 @@ export function DashboardPanel() {
       });
     } catch (e) {
       console.error('[DashboardPanel] Toggle auto-refresh failed:', e);
-      setAutoRefresh(!newValue); // revert on failure
+      setAutoRefresh(!newValue);
     }
   }, [workingDirectory, autoRefresh]);
 
@@ -263,19 +232,13 @@ export function DashboardPanel() {
         {/* Header */}
         <div className="flex h-10 shrink-0 items-center justify-between px-3">
           <div className="flex items-center gap-2">
-            {isAssistantWorkspace && assistantSummary?.configured && (
-              <AssistantAvatar name={assistantSummary.name || 'assistant'} size={20} />
-            )}
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {isAssistantWorkspace
-                ? (assistantSummary?.name || t('assistant.defaultName'))
-                : t('dashboard.title')}
+              {t('dashboard.title')}
             </span>
           </div>
           <div className="flex items-center gap-1">
-            {(widgets.length > 0 || isAssistantWorkspace) && (
+            {widgets.length > 0 && (
               <>
-                {/* Auto-refresh toggle */}
                 <button
                   onClick={handleToggleAutoRefresh}
                   className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
@@ -286,20 +249,10 @@ export function DashboardPanel() {
                   </span>
                 </button>
                 <div className="h-4 w-px bg-border/60 mx-1" />
-                {/* Refresh all */}
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => {
-                    // Refresh widgets + assistant status
-                    handleRefreshAll();
-                    if (isAssistantWorkspace) {
-                      fetch('/api/workspace/summary')
-                        .then(r => r.ok ? r.json() : null)
-                        .then(data => setAssistantSummary(data))
-                        .catch(() => {});
-                    }
-                  }}
+                  onClick={handleRefreshAll}
                   disabled={refreshingAll}
                   title={t('dashboard.refresh')}
                 >
@@ -308,7 +261,6 @@ export function DashboardPanel() {
                 </Button>
               </>
             )}
-            {/* Close button — always visible */}
             <Button
               variant="ghost"
               size="icon-sm"
@@ -328,22 +280,13 @@ export function DashboardPanel() {
             </div>
           ) : widgets.length === 0 ? (
             <div className="flex flex-col h-full px-3 pt-3">
-              {isAssistantWorkspace && assistantSummary?.configured && (
-                <AssistantStatusCard summary={assistantSummary} t={t} />
-              )}
-              {!(isAssistantWorkspace && assistantSummary?.configured) && (
-                <div className="flex flex-col items-center justify-center flex-1 text-center text-muted-foreground">
-                  <ChartBar size={32} className="mb-3 opacity-40" />
-                  <p className="text-sm">{t('dashboard.empty')}</p>
-                </div>
-              )}
+              <div className="flex flex-col items-center justify-center flex-1 text-center text-muted-foreground">
+                <ChartBar size={32} className="mb-3 opacity-40" />
+                <p className="text-sm">{t('dashboard.empty')}</p>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col gap-4 p-3">
-              {/* Assistant status card — always first in assistant workspace */}
-              {isAssistantWorkspace && assistantSummary?.configured && (
-                <AssistantStatusCard summary={assistantSummary} t={t} />
-              )}
               {stableWidgets.map((widget) => {
                 const displayIdx = orderMap.get(widget.id) ?? 0;
                 return (
@@ -462,68 +405,6 @@ function DashboardWidgetCard({ widget, refreshing, isFirst, isLast, style, onRef
 
       {/* Widget render */}
       <WidgetRenderer widgetCode={widget.widgetCode} isStreaming={false} title={widget.title} />
-    </div>
-  );
-}
-
-/** Built-in assistant status card — injected at the top of assistant workspace dashboards. */
-function AssistantStatusCard({ summary, t }: {
-  summary: AssistantSummary;
-  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
-}) {
-  const router = useRouter();
-  const displayName = summary.name || t('assistant.defaultName' as TranslationKey);
-
-  return (
-    <div className={cn('rounded-lg border bg-primary/[0.03] p-3 space-y-3 border-primary/10')}>
-      {/* Header: Avatar + Name + Settings gear */}
-      <div className="flex items-center gap-2">
-        <AssistantAvatar name={displayName} size={40} className="rounded-lg" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium truncate">{displayName}</span>
-          </div>
-          {summary.styleHint && (
-            <div className="text-[10px] text-muted-foreground truncate">{summary.styleHint}</div>
-          )}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="shrink-0 text-muted-foreground text-[10px] gap-1 h-6 px-1.5"
-          onClick={() => router?.push('/settings#assistant')}
-        >
-          <Gear size={12} />
-          {t('settings.title' as TranslationKey)}
-        </Button>
-      </div>
-
-      {/* Status row — compact single line */}
-      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-        <div className="flex items-center gap-1">
-          <Brain size={11} />
-          <span>{t('assistant.panel.memories' as TranslationKey)}</span>
-          <span className="text-foreground">{summary.memoryCount}</span>
-        </div>
-      </div>
-
-      {/* File health */}
-      {summary.fileHealth && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {Object.entries(summary.fileHealth).map(([key, exists]) => (
-            <div key={key} className="flex items-center gap-1 text-[10px]">
-              {exists ? (
-                <Check size={10} className="text-status-success" />
-              ) : (
-                <Warning size={10} className="text-status-warning" />
-              )}
-              <span className={exists ? 'text-muted-foreground' : 'text-status-warning'}>
-                {key}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

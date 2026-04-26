@@ -11,6 +11,7 @@ import {
   Copy,
   ArrowSquareOut,
 } from "@/components/ui/icon";
+
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -29,14 +30,11 @@ interface ProjectGroupHeaderProps {
   displayName: string;
   isCollapsed: boolean;
   isFolderHovered: boolean;
-  isWorkspace: boolean;
   onToggle: () => void;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
   onCreateSession: (e: React.MouseEvent) => void;
   onRemoveProject?: (workingDirectory: string) => void;
-  assistantName?: string;
-  assistantMemoryCount?: number;
 }
 
 export function ProjectGroupHeader({
@@ -44,14 +42,11 @@ export function ProjectGroupHeader({
   displayName,
   isCollapsed,
   isFolderHovered,
-  isWorkspace,
   onToggle,
   onMouseEnter,
   onMouseLeave,
   onCreateSession,
   onRemoveProject,
-  assistantName,
-  assistantMemoryCount,
 }: ProjectGroupHeaderProps) {
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -109,7 +104,7 @@ export function ProjectGroupHeader({
             <Copy size={14} />
             <span>{t('chatList.copyFolderPath' as TranslationKey)}</span>
           </DropdownMenuItem>
-          {onRemoveProject && !isWorkspace && (
+          {onRemoveProject && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -125,46 +120,6 @@ export function ProjectGroupHeader({
       </DropdownMenu>
     </div>
   );
-
-  if (isWorkspace) {
-    const folderName = displayName;
-    const nameDisplay = assistantName || t('assistant.defaultName' as TranslationKey);
-    const memoryHint = assistantMemoryCount
-      ? t('assistant.memoryCount' as TranslationKey, { count: String(assistantMemoryCount) })
-      : null;
-
-    return (
-      <div
-        className={cn(
-          "flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer select-none transition-colors",
-          isCollapsed
-            ? "hover:bg-accent/50"
-            : "bg-primary/[0.06] hover:bg-primary/[0.10]"
-        )}
-        onClick={onToggle}
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
-      >
-        <FolderOpen size={20} className="shrink-0 text-primary" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1">
-            <span className="truncate text-[13px] font-medium text-sidebar-foreground">
-              {nameDisplay}
-            </span>
-            {isCollapsed ? (
-              <CaretRight size={12} className="shrink-0 text-muted-foreground" />
-            ) : (
-              <CaretDown size={12} className="shrink-0 text-muted-foreground" />
-            )}
-          </div>
-          <span className="block truncate text-[11px] text-muted-foreground/50 leading-tight">
-            {memoryHint ? `${memoryHint} · ` : ''}/ {folderName}
-          </span>
-        </div>
-        {actionButtons}
-      </div>
-    );
-  }
 
   return (
     <div

@@ -50,7 +50,6 @@ describe('assembleContext', () => {
 
     assert.ok(result.systemPrompt?.includes('You are a helpful assistant.'));
     assert.equal(result.generativeUIEnabled, true);
-    assert.equal(result.isAssistantProject, false);
   });
 
   it('bridge: does NOT enable generativeUI or widget MCP', async () => {
@@ -75,18 +74,6 @@ describe('assembleContext', () => {
 
     assert.ok(result.systemPrompt?.includes('EXTRA INSTRUCTIONS HERE'));
     assert.ok(result.systemPrompt?.includes('You are a helpful assistant.'));
-  });
-
-  it('non-workspace session: isAssistantProject is false', async () => {
-    const { assembleContext } = await import('../../lib/context-assembler');
-    const result = await assembleContext({
-      session: makeSession({ working_directory: '/Users/test/project' }),
-      entryPoint: 'desktop',
-      userPrompt: 'hello',
-    });
-
-    assert.equal(result.isAssistantProject, false);
-    assert.equal(result.assistantProjectInstructions, '');
   });
 
   // Widget MCP keyword detection is now handled solely in claude-client.ts.

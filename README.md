@@ -43,7 +43,6 @@ The model selector lets you switch between official Anthropic models (Sonnet / O
 
 CodePilot started as a coding tool but has grown into a **general-purpose AI agent desktop**:
 
-- **Assistant Workspace** — Persona files, persistent memory, and progressive onboarding driven entirely by Claude. Your assistant learns your preferences and adapts over time.
 - **Generative UI** — AI can create interactive dashboards, charts, and visual widgets rendered live in-app.
 - **Remote Bridge** — Connect to Telegram, Feishu, Discord, QQ, and WeChat. Send messages from your phone, get responses on your desktop.
 - **MCP + Skills** — Add MCP servers (stdio / sse / http) with runtime monitoring. Define reusable skills or install from the skills.sh marketplace.
@@ -117,7 +116,6 @@ npm run electron:dev     # full desktop app
 
 | Capability | Details |
 |---|---|
-| Assistant Workspace | Persona files (soul.md, user.md, claude.md, memory.md), persistent memory |
 | Generative UI | AI-created interactive dashboards and visual widgets |
 | File browser | Project file tree with syntax-highlighted preview |
 | Git panel | Status, branches, commits, worktree management |
@@ -132,8 +130,7 @@ npm run electron:dev     # full desktop app
 
 1. **Configure `~/.claude`** — Sign in to your Anthropic account from inside CodePilot (Claude Code is already bundled), or write `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` manually before launch.
 2. **Create a conversation** — Pick a working directory, select a mode (Code / Plan / Ask), and pick a model in the composer.
-3. **Set up Assistant Workspace** (optional) — Go to **Settings > Assistant**, choose a workspace directory. CodePilot creates `soul.md`, `user.md`, `claude.md`, and `memory.md` at the workspace root.
-4. **Add MCP servers** (optional) — Go to the **MCP** page in the sidebar to add and manage MCP servers. Custom skills are managed on the separate **Skills** page.
+3. **Add MCP servers** (optional) — Go to the **MCP** page in the sidebar to add and manage MCP servers. Custom skills are managed on the separate **Skills** page.
 
 ---
 
@@ -170,14 +167,13 @@ xattr -cr /Applications/CodePilot.app
 
 **Getting started:**
 - [Quick Start](#quick-start) -- Download or build from source
-- [First Launch](#first-launch) -- Claude Code CLI check, workspace configuration
+- [First Launch](#first-launch) -- Claude Code CLI check
 - [Installation Guide](https://www.codepilot.sh/docs/installation) -- Detailed setup instructions
 
 **User guides:**
 - [MCP Servers](https://www.codepilot.sh/docs/mcp) -- Adding and managing Model Context Protocol servers
 - [Skills](https://www.codepilot.sh/docs/skills) -- Custom skills, project skills, and the skills.sh marketplace
 - [Bridge](https://www.codepilot.sh/docs/bridge) -- Remote control via Telegram, Feishu, Discord, QQ, WeChat
-- [Assistant Workspace](https://www.codepilot.sh/docs/assistant-workspace) -- Persona files, memory
 - [FAQ](https://www.codepilot.sh/docs/faq) -- Common issues and solutions
 
 **Developer docs:**
@@ -205,12 +201,6 @@ Yes — but configure it through Claude Code itself. Set `ANTHROPIC_BASE_URL` an
 <summary>What is the difference between <code>npm run dev</code> and <code>npm run electron:dev</code>?</summary>
 
 `npm run dev` starts only the Next.js dev server -- you use CodePilot in your browser at `http://localhost:3000`. `npm run electron:dev` starts both Next.js and the Electron shell, giving you the full desktop app experience with native window controls.
-</details>
-
-<details>
-<summary>Where are the Assistant Workspace files?</summary>
-
-When you set up a workspace, CodePilot creates four Markdown files at the **workspace root directory**: `soul.md` (personality), `user.md` (user profile), `claude.md` (rules), and `memory.md` (long-term notes). State tracking (onboarding progress, check-in dates) is stored in the `.assistant/` subdirectory. Daily memories go to `memory/daily/`.
 </details>
 
 <details>

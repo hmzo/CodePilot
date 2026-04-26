@@ -171,10 +171,6 @@ interface MessageListProps {
   /** SDK rewind points — only emitted for visible prompt-level user messages (not tool results or auto-triggers), mapped by position */
   rewindPoints?: RewindPoint[];
   sessionId?: string;
-  /** Whether this is an assistant workspace project */
-  isAssistantProject?: boolean;
-  /** Assistant name for avatar display */
-  assistantName?: string;
 }
 
 export function MessageList({
@@ -192,8 +188,6 @@ export function MessageList({
   onLoadMore,
   rewindPoints = [],
   sessionId,
-  isAssistantProject,
-  assistantName,
 }: MessageListProps) {
   const { t } = useTranslation();
   // Scroll anchor: preserve position when older messages are prepended
@@ -223,7 +217,7 @@ export function MessageList({
     return (
       <div className="flex flex-1 items-center justify-center">
         <ConversationEmptyState
-          title={isAssistantProject ? (assistantName || t('messageList.claudeChat')) : t('messageList.claudeChat')}
+          title={t('messageList.claudeChat')}
           description={t('messageList.emptyDescription')}
           icon={<CodePilotLogo className="h-16 w-16" />}
         />
@@ -263,7 +257,7 @@ export function MessageList({
 
           return (
             <div key={message.id} id={`msg-${message.id}`} className="group">
-              <MessageItem message={message} sessionId={sessionId} isAssistantProject={isAssistantProject} assistantName={assistantName} />
+              <MessageItem message={message} sessionId={sessionId} />
               {rewindSdkUuid && sessionId && !isStreaming && (
                 <RewindButton sessionId={sessionId} userMessageId={rewindSdkUuid} />
               )}

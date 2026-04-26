@@ -34,9 +34,6 @@ export function UnifiedTopBar() {
     setGitPanelOpen,
     dashboardPanelOpen,
     setDashboardPanelOpen,
-    assistantPanelOpen,
-    setAssistantPanelOpen,
-    isAssistantWorkspace,
     currentBranch,
     gitDirtyCount,
   } = usePanel();
@@ -245,9 +242,7 @@ export function UnifiedTopBar() {
                     <span className="sr-only">{t('topBar.dashboard')}</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  {isAssistantWorkspace ? 'Assistant' : t('topBar.dashboard')}
-                </TooltipContent>
+                <TooltipContent side="bottom">{t('topBar.dashboard')}</TooltipContent>
               </Tooltip>
             </>
           )}

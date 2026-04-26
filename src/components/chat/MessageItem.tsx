@@ -19,7 +19,6 @@ import { ImageGenCard } from './ImageGenCard';
 import { BatchPlanInlinePreview } from './batch-image-gen/BatchPlanInlinePreview';
 import { WidgetRenderer } from './WidgetRenderer';
 import { buildReferenceImages } from '@/lib/image-ref-store';
-import { AssistantAvatar } from '@/components/ui/AssistantAvatar';
 import { parseDBDate } from '@/lib/utils';
 import { usePanel } from '@/hooks/usePanel';
 import type { PlannerOutput } from '@/types';
@@ -323,10 +322,6 @@ function extractTruncatedWidget(fenceBody: string): ShowWidgetData | null {
 interface MessageItemProps {
   message: Message;
   sessionId?: string;
-  /** Whether this is an assistant workspace project */
-  isAssistantProject?: boolean;
-  /** Assistant name for avatar */
-  assistantName?: string;
 }
 
 interface ToolBlock {
@@ -571,7 +566,7 @@ function DiffSummary({ files }: { files: Array<{ path: string; name: string }> }
   );
 }
 
-export const MessageItem = memo(function MessageItem({ message, sessionId, isAssistantProject, assistantName }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({ message, sessionId }: MessageItemProps) {
   const isUser = message.role === 'user';
 
   // Collapse/expand state for long user messages (hooks must be called unconditionally)
@@ -622,14 +617,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
     minute: '2-digit',
   });
 
-  const showAssistantAvatar = !isUser && isAssistantProject;
-
   return (
-    <div className={showAssistantAvatar ? 'flex gap-2.5 items-start' : ''}>
-      {showAssistantAvatar && (
-        <AssistantAvatar name={assistantName || 'assistant'} size={28} className="mt-0.5 shrink-0" />
-      )}
-      <div className="flex-1 min-w-0">
     <AIMessage from={isUser ? 'user' : 'assistant'}>
       <MessageContent>
         {/* File attachments for user messages */}
@@ -726,8 +714,6 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
         {displayText && <CopyButton text={displayText} />}
       </div>
     </AIMessage>
-      </div>
-    </div>
   );
 });
 

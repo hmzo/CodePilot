@@ -170,8 +170,6 @@ export async function POST(request: NextRequest) {
     });
     const finalSystemPrompt = assembled.systemPrompt;
     const generativeUIEnabled = assembled.generativeUIEnabled;
-    const assistantProjectInstructions = assembled.assistantProjectInstructions;
-    const isAssistantProject = assembled.isAssistantProject;
 
     // Load only MCP servers needing CodePilot-specific processing (${...} env placeholders).
     // All other MCP servers are auto-loaded by the SDK via settingSources.

@@ -51,7 +51,6 @@ export default function NewChatPage() {
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [errorBanner, setErrorBanner] = useState<{ message: string; description?: string } | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
-  const [assistantConfigured, setAssistantConfigured] = useState(false);
   const [mode, setMode] = useState('code');
   // Model is read once from localStorage (synchronously). Credentials live in
   // ~/.claude — CodePilot no longer manages providers, so there is no async
@@ -144,19 +143,6 @@ export default function NewChatPage() {
     fetch('/api/setup/recent-projects')
       .then(r => r.ok ? r.json() : { projects: [] })
       .then(data => setRecentProjects(data.projects || []))
-      .catch(() => {});
-  }, []);
-
-  // Detect assistant workspace status (used to decide whether the empty-state
-  // assistant card jumps straight to a chat or to the settings configure page).
-  useEffect(() => {
-    fetch('/api/settings/workspace')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data?.path && data?.valid !== false) {
-          setAssistantConfigured(!!data.state?.onboardingComplete);
-        }
-      })
       .catch(() => {});
   }, []);
 
@@ -520,22 +506,6 @@ export default function NewChatPage() {
           onSelectFolder={handleSelectFolder}
           recentProjects={recentProjects}
           onSelectProject={handleSelectProject}
-          assistantConfigured={assistantConfigured}
-          onOpenAssistant={() => {
-            if (assistantConfigured) {
-              // Navigate to the latest assistant session
-              fetch(`/api/workspace/session`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
-              })
-                .then(r => r.json())
-                .then(data => router.push(`/chat/${data.session.id}`))
-                .catch(() => {});
-            } else {
-              router.push('/settings#assistant');
-            }
-          }}
         />
       ) : (
         <MessageList
