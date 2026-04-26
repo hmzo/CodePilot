@@ -18,7 +18,6 @@ import { BatchImageGenContext, useBatchImageGenState } from "@/hooks/useBatchIma
 import { SplitContext, type SplitSession } from "@/hooks/useSplit";
 import { SplitChatContainer } from "./SplitChatContainer";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { SentryInit } from "./SentryInit";
 import { getActiveSessionIds, getSnapshot } from "@/lib/stream-session-manager";
 import { useGitStatus } from "@/hooks/useGitStatus";
 import { SetupCenter } from '@/components/setup/SetupCenter';
@@ -428,7 +427,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <UpdateContext.Provider value={updateContextValue}>
-      <SentryInit />
       <PanelContext.Provider value={panelContextValue}>
         <SplitContext.Provider value={splitContextValue}>
         <ImageGenContext.Provider value={imageGenValue}>

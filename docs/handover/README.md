@@ -26,4 +26,3 @@
 | bundled-claude-code.md | 内置 Claude Code 原生二进制：fetcher / before-pack / after-sign 三段流水线、`getBundledClaudePath()` 路径解析、运行时永远用内置版本、macOS 嵌套签名处理 |
 | tool-call-ux.md | 工具调用 UX 优化：thinking 展示全链路、工具注册表、上下文归组、状态动画、流式缓冲/节流 |
 | performance-memory.md | v0.45.0 内存优化：LRU 缓存、消息 300 条上限双向修剪、面板懒加载、流式文件读取、定时器追踪 |
-| sentry-error-reporting.md | Sentry 匿名错误上报：三层覆盖（browser/server/electron）、opt-out 机制、隐私保护、上报策略 |
