@@ -391,20 +391,25 @@ export function PermissionPrompt({
   // below; it remains as a defensive fallback in case something does slip
   // through (e.g. a permission_request that was already in flight when the
   // profile flipped to full_access).
-  const isInteractive = !!pendingPermission && isInteractiveTool(pendingPermission.toolName);
   const autoApprovedRef = useRef<string | null>(null);
   useEffect(() => {
     if (
       permissionProfile === 'full_access' &&
       pendingPermission &&
-      !isInteractive &&
+      !isInteractiveTool(pendingPermission.toolName) &&
       !permissionResolved &&
       autoApprovedRef.current !== pendingPermission.permissionRequestId
     ) {
       autoApprovedRef.current = pendingPermission.permissionRequestId;
       onPermissionResponse('allow');
     }
-  }, [permissionProfile, pendingPermission, isInteractive, permissionResolved, onPermissionResponse]);
+    // Intentionally NOT depending on a separate `isInteractive` value:
+    // it's derived purely from `pendingPermission` (already a dep), and
+    // adding/removing a derived dep changes the dep-array length, which
+    // breaks Fast Refresh for already-mounted instances.
+  }, [permissionProfile, pendingPermission, permissionResolved, onPermissionResponse]);
+
+  const isInteractive = !!pendingPermission && isInteractiveTool(pendingPermission.toolName);
 
   // In full_access, hide the prompt UI for non-interactive tools (they're
   // auto-approved). Interactive tools always render so the user can answer.
